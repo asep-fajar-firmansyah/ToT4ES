@@ -10,8 +10,9 @@ fetch its description (dbo:abstract / rdfs:comment) and retrieve its triples.
 
 from __future__ import annotations
 
+import json
 import re
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from urllib.parse import quote
 
 from SPARQLWrapper import JSON, SPARQLWrapper
@@ -56,6 +57,8 @@ ENGLISH_ONLY_FILTER = """
 _URI_PATTERN = re.compile(r"^https?://[^\s<>\"{}|\\^`]+$")
 # Keep only characters that are safe inside a Virtuoso free-text search string.
 _UNSAFE_TERM_CHARS = re.compile(r"[^\w\s\-.']", re.UNICODE)
+_NT_LINE = re.compile(r'^\s*(<[^>]+>)\s+(<[^>]+>)\s+(.+?)\s*\.\s*$')
+_NT_LITERAL = re.compile(r'^"((?:\\.|[^"\\])*)"(?:@[^\s]+|\^\^<[^>]+>)?$')
 
 
 class DBpediaError(RuntimeError):
@@ -94,6 +97,84 @@ def local_name(uri: str) -> str:
     fragment = fragment.replace("_", " ")
     fragment = re.sub(r"(?<=[a-z0-9])(?=[A-Z])", " ", fragment)
     return fragment.strip()
+
+
+def _parse_nt_line(line: str) -> Optional[Tuple[str, str, str, bool]]:
+    """Parse one N-Triples statement into URI/literal display values."""
+    match = _NT_LINE.match(line)
+    if not match:
+        return None
+    subject, predicate, obj = match.groups()
+    subject = subject[1:-1]
+    predicate = predicate[1:-1]
+    if obj.startswith('<') and obj.endswith('>'):
+        return subject, predicate, obj[1:-1], True
+    literal = _NT_LITERAL.match(obj)
+    if not literal:
+        return None
+    value = json.loads(f'"{literal.group(1)}"')
+    return subject, predicate, value, False
+
+
+def parse_nt_entity(content: bytes, limit: int = DEFAULT_TRIPLE_LIMIT) -> Dict[str, Any]:
+    """Parse an uploaded N-Triples entity description into the web UI schema."""
+    triples: List[Dict[str, Any]] = []
+    subject_uri: Optional[str] = None
+    label: Optional[str] = None
+    description: Optional[str] = None
+    label_predicates = {"http://www.w3.org/2000/01/rdf-schema#label", "http://xmlns.com/foaf/0.1/name"}
+    description_predicates = {
+        "http://dbpedia.org/ontology/abstract",
+        "http://dbpedia.org/ontology/description",
+        "http://www.w3.org/2000/01/rdf-schema#comment",
+    }
+
+    for line_number, raw_line in enumerate(content.decode("utf-8-sig").splitlines(), start=1):
+        line = raw_line.strip()
+        if not line or line.startswith('#'):
+            continue
+        parsed = _parse_nt_line(line)
+        if parsed is None:
+            raise ValueError(f"Invalid N-Triples syntax on line {line_number}.")
+        subject, predicate, obj, object_is_uri = parsed
+        if subject_uri is None:
+            subject_uri = subject
+        if subject != subject_uri:
+            raise ValueError("The uploaded file must describe one entity subject.")
+        if not label and predicate in label_predicates and not object_is_uri:
+            label = obj
+        if not description and predicate in description_predicates and not object_is_uri:
+            description = obj
+        if predicate in EXCLUDED_PREDICATES:
+            continue
+        triples.append({
+            "index": len(triples) + 1,
+            "subject": subject,
+            "subject_label": local_name(subject),
+            "predicate": predicate,
+            "predicate_label": local_name(predicate),
+            "object": obj,
+            "object_label": local_name(obj) if object_is_uri else obj,
+            "object_is_uri": object_is_uri,
+        })
+
+    if not subject_uri or not triples:
+        raise ValueError("The uploaded .nt file contains no usable triples.")
+    triples = triples[: max(1, min(int(limit), 200))]
+    return {
+        "query": subject_uri,
+        "resolved": {
+            "uri": subject_uri,
+            "label": label or local_name(subject_uri),
+            "abstract": description,
+            "comment": None,
+            "short_description": None,
+            "description": description,
+        },
+        "candidates": [],
+        "triples": triples,
+        "source": "upload",
+    }
 
 
 def _run_query(query: str, endpoint: str = DBPEDIA_ENDPOINT) -> List[Dict[str, Any]]:

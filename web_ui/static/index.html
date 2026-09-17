@@ -20,6 +20,12 @@
       <button type="submit" id="submit-button">Search</button>
     </form>
 
+    <form id="upload-form" class="upload-bar">
+      <label for="nt-file">Or upload entity description</label>
+      <input id="nt-file" type="file" name="file" accept=".nt,application/n-triples,text/plain" required>
+      <button type="submit" id="upload-button">Load .nt file</button>
+    </form>
+
     <p id="status" class="status" role="status"></p>
 
     <section id="entity-card" class="card hidden">

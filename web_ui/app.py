@@ -15,7 +15,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
@@ -27,6 +27,7 @@ from dbpedia_client import (
     describe_entity,
     get_description,
     get_triples,
+    parse_nt_entity,
     search_entities,
 )
 from llm_api import LLMAPIError, describe_providers
@@ -83,6 +84,26 @@ def api_entity(
     if result["resolved"] is None:
         raise HTTPException(status_code=404, detail=f"No DBpedia entity found for {name!r}.")
     return result
+
+
+@app.post("/api/entity/upload")
+async def api_entity_upload(
+    file: UploadFile = File(...),
+    limit: int = Query(DEFAULT_TRIPLE_LIMIT, ge=1, le=200),
+):
+    """Parse one uploaded .nt file containing an entity description."""
+    filename = file.filename or ""
+    if not filename.lower().endswith(".nt"):
+        raise HTTPException(status_code=400, detail="Upload an N-Triples file with a .nt extension.")
+    content = await file.read()
+    if len(content) > 10 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="The .nt upload must be smaller than 10 MB.")
+    try:
+        return parse_nt_entity(content, limit)
+    except UnicodeDecodeError as exc:
+        raise HTTPException(status_code=400, detail="The .nt file must be UTF-8 encoded.") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.get("/api/providers")

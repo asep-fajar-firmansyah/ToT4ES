@@ -158,6 +158,18 @@ h3 { font-size: 1.05rem; margin: 0 0 0.6rem; }
 
 .candidate:hover { border-color: var(--accent); color: var(--accent); }
 
+.upload-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  flex-wrap: wrap;
+  margin: 0.75rem 0 1.25rem;
+  color: var(--muted);
+  font-size: 0.85rem;
+}
+
+.upload-bar input[type="file"] { max-width: 100%; }
+
 .summary-controls {
   display: flex;
   align-items: center;

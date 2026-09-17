@@ -26,6 +26,22 @@ uvicorn app:app --reload --port 8000
 
 Open http://127.0.0.1:8000
 
+### Load a local `.nt` entity description
+
+The search form also accepts one UTF-8 N-Triples file. The file must contain
+one subject, for example:
+
+```nt
+<http://example.org/Barack_Obama> <http://www.w3.org/2000/01/rdf-schema#label> "Barack Obama"@en .
+<http://example.org/Barack_Obama> <http://dbpedia.org/ontology/birthDate> "1961-08-04" .
+<http://example.org/Barack_Obama> <http://dbpedia.org/ontology/birthPlace> <http://example.org/Honolulu> .
+```
+
+Choose the file in **Or upload entity description** and click **Load .nt file**.
+The uploaded subject, description, triples, graph and ToT4ES summary use the
+same UI flow as a DBpedia result. Install `web_ui/requirements.txt` first;
+the upload endpoint requires `python-multipart` for FastAPI form parsing.
+
 ### Serve on the machine's network address
 
 `--host 127.0.0.1` (the uvicorn default) only accepts local connections. Bind to

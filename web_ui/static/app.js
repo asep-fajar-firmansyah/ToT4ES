@@ -2,6 +2,9 @@ const form = document.getElementById("search-form");
 const entityInput = document.getElementById("entity-input");
 const limitInput = document.getElementById("limit-input");
 const submitButton = document.getElementById("submit-button");
+const uploadForm = document.getElementById("upload-form");
+const ntFileInput = document.getElementById("nt-file");
+const uploadButton = document.getElementById("upload-button");
 const statusEl = document.getElementById("status");
 
 const entityCard = document.getElementById("entity-card");
@@ -72,6 +75,31 @@ form.addEventListener("submit", (event) => {
   const name = entityInput.value.trim();
   if (name) {
     load({ name });
+  }
+});
+
+uploadForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const file = ntFileInput.files[0];
+  if (!file) return;
+  setBusy(true, "Loading N-Triples file...");
+  uploadButton.disabled = true;
+  try {
+    const body = new FormData();
+    body.append("file", file);
+    const response = await fetch(`/api/entity/upload?limit=${encodeURIComponent(limitInput.value || "30")}`, {
+      method: "POST",
+      body,
+    });
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.detail || `Request failed (${response.status})`);
+    render(payload);
+    setBusy(false, `Loaded ${file.name}.`);
+  } catch (error) {
+    reset();
+    setBusy(false, error.message);
+  } finally {
+    uploadButton.disabled = false;
   }
 });
 
