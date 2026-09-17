@@ -275,6 +275,8 @@ a { color: var(--accent); }
   background: rgba(20, 28, 40, 0.48);
 }
 
+.generation-modal.hidden { display: none; }
+
 .generation-window {
   width: min(920px, 100%);
   max-height: min(760px, calc(100vh - 2rem));
@@ -292,6 +294,20 @@ a { color: var(--accent); }
   justify-content: space-between;
   gap: 1rem;
 }
+
+.generation-header-actions { display: flex; align-items: center; gap: 0.8rem; }
+.generation-close {
+  width: 2rem;
+  height: 2rem;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--muted);
+  font-size: 1.35rem;
+  line-height: 1;
+}
+.generation-close:hover { border-color: var(--accent); color: var(--accent); }
 
 .generation-kicker {
   color: var(--accent);

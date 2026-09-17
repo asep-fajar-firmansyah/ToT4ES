@@ -37,11 +37,14 @@ const searchTree = document.getElementById("search-tree");
 const generationRuntime = document.getElementById("generation-runtime");
 const generationStatus = document.getElementById("generation-status");
 const generationStep = document.getElementById("generation-step");
+const generationClose = document.getElementById("generation-close");
 
 let currentEntity = null;
 let currentTriples = [];
 let generationTimer = null;
 let generationStartedAt = 0;
+
+generationClose.addEventListener("click", closeGenerationModal);
 
 loadProviders();
 
@@ -281,6 +284,13 @@ function finishGenerationModal(success, summary) {
   drawSearchTree(success ? 5 : 0, summary.map((triple) => triple.index));
   generationModal.setAttribute("aria-busy", "false");
   window.setTimeout(() => generationModal.classList.add("hidden"), success ? 700 : 250);
+}
+
+function closeGenerationModal() {
+  clearInterval(generationTimer);
+  generationTimer = null;
+  generationModal.classList.add("hidden");
+  generationModal.setAttribute("aria-busy", "false");
 }
 
 function drawSearchTree(stage, selectedIndices) {
