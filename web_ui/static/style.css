@@ -134,6 +134,25 @@ h3 { font-size: 1.05rem; margin: 0 0 0.6rem; }
 
 .candidate:hover { border-color: var(--accent); color: var(--accent); }
 
+.summary-controls {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.provider-label { color: var(--muted); font-size: 0.8rem; }
+
+.provider-select {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+  color: var(--fg);
+  padding: 0.35rem 0.5rem;
+  font-size: 0.85rem;
+  max-width: 16rem;
+}
+
 .summary-button { padding: 0.4rem 0.75rem; font-size: 0.85rem; }
 .summary-button:disabled { cursor: progress; }
 .summary-card { margin-top: 1.5rem; }

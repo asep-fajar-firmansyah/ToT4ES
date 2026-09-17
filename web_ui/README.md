@@ -10,8 +10,8 @@ description plus 30 triples.
 | --- | --- |
 | `app.py` | FastAPI backend and static file serving |
 | `dbpedia_client.py` | SPARQL queries: name resolution, description, triples |
-| `llm_api.py` | OpenAI-compatible chat API adapter |
-| `tot4es_service.py` | Existing task-decomposed ToT4ES search wired to the API adapter |
+| `llm_api.py` | Chat adapters: DICE LLM API (OpenAI-compatible) and local Ollama |
+| `tot4es_service.py` | Existing task-decomposed ToT4ES search wired to the selected adapter |
 | `static/` | Frontend (`index.html`, `app.js`, `style.css`) |
 
 ## Run
@@ -26,6 +26,49 @@ uvicorn app:app --reload --port 8000
 
 Open http://127.0.0.1:8000
 
+## LLM providers
+
+The UI has an **LLM** dropdown next to *Generate ToT4ES summary* with two
+backends. Providers that are not usable (no API key, Ollama not running) are
+shown as unavailable.
+
+### 1. DICE LLM API (remote, default)
+
+| Variable | Default |
+| --- | --- |
+| `DICE_LLM_API_KEY` | *(required)* |
+| `DICE_LLM_ENDPOINT` | `https://dice-llm-api.cs.uni-paderborn.de/v1/chat/completions` |
+| `DICE_LLM_MODEL` | `general-purpose` |
+| `DICE_LLM_TIMEOUT` | `300` |
+
+### 2. Ollama (local, no API key)
+
+```bash
+ollama pull qwen3.5:0.8b
+ollama serve            # usually already running as a service
+```
+
+| Variable | Default |
+| --- | --- |
+| `OLLAMA_ENDPOINT` | `http://localhost:11434` |
+| `OLLAMA_MODEL` | `qwen3.5:0.8b` |
+| `OLLAMA_TIMEOUT` | `300` |
+| `OLLAMA_VERBOSE` | falls back to `DICE_LLM_VERBOSE` |
+
+Set `LLM_PROVIDER=ollama` to make Ollama the preselected provider:
+
+```bash
+cd web_ui
+export LLM_PROVIDER=ollama
+export OLLAMA_MODEL=qwen3.5:0.8b
+uvicorn app:app --reload --port 8000
+```
+
+Requests hit Ollama's native `/api/chat` with `stream: false`; `temperature`
+and `num_predict` are mapped from the ToT4ES search settings, `n > 1` is
+emulated with sequential calls, and `<think>...</think>` blocks emitted by
+reasoning models are stripped from the answer.
+
 ## API
 
 | Endpoint | Description |
@@ -33,11 +76,13 @@ Open http://127.0.0.1:8000
 | `GET /api/search?q=<name>&limit=10` | Candidate DBpedia resources for a name |
 | `GET /api/entity?name=<name>&limit=30` | Description + triples resolved from a name |
 | `GET /api/entity?uri=<uri>&limit=30` | Description + triples for an explicit resource URI |
+| `GET /api/providers` | Available LLM backends, their models and readiness |
 | `POST /api/summarize` | Run task-decomposed ToT4ES over the returned triples |
 
-The summary endpoint accepts JSON with `entity_label`, `triples`, and optional
-`summary_length` (1-20). It uses `DICE_LLM_ENDPOINT` and `DICE_LLM_MODEL` when
-set, defaulting to the supplied DICE endpoint and `general-purpose` model.
+The summary endpoint accepts JSON with `entity_label`, `triples`, optional
+`summary_length` (1-20), optional `provider` (`dice` or `ollama`) and optional
+`model` to override the provider default. Without `provider` it falls back to
+`LLM_PROVIDER`, then to the DICE API.
 Keep `DICE_LLM_API_KEY` server-side and do not commit it. The bearer token
 included in an example request should be revoked and replaced if it is real.
 

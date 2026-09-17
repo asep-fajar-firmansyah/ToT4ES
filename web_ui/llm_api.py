@@ -1,18 +1,28 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 
-"""OpenAI-compatible chat client for the ToT4ES search engine."""
+"""Chat clients for the ToT4ES search engine (DICE LLM API and local Ollama)."""
 
 from __future__ import annotations
 
 import os
 import logging
 import json
-from typing import Dict, List, Optional
+import re
+from typing import Any, Dict, List, Optional
 
 import requests
 
 LOGGER = logging.getLogger(__name__)
+
+PROVIDER_DICE = "dice"
+PROVIDER_OLLAMA = "ollama"
+DEFAULT_PROVIDER = os.getenv("LLM_PROVIDER", PROVIDER_DICE).strip().lower()
+
+DEFAULT_OLLAMA_ENDPOINT = "http://localhost:11434"
+DEFAULT_OLLAMA_MODEL = "qwen3.5:0.8b"
+
+_THINK_BLOCK = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
 
 
 class LLMAPIError(RuntimeError):
@@ -21,6 +31,8 @@ class LLMAPIError(RuntimeError):
 
 class OpenAICompatibleChat:
     """Adapt an OpenAI-compatible chat completion endpoint to ToT4ES."""
+
+    provider_id = PROVIDER_DICE
 
     def __init__(
         self,
@@ -156,3 +168,169 @@ class OpenAICompatibleChat:
 
     def __repr__(self) -> str:
         return f"OpenAICompatibleChat(model={self.model_id!r}, endpoint={self.endpoint!r})"
+
+
+class OllamaChat:
+    """Adapt a local Ollama server (`/api/chat`) to the ToT4ES chat interface."""
+
+    provider_id = PROVIDER_OLLAMA
+
+    def __init__(
+        self,
+        endpoint: Optional[str] = None,
+        model: Optional[str] = None,
+        timeout: Optional[int] = None,
+    ) -> None:
+        base = (endpoint or os.getenv("OLLAMA_ENDPOINT", DEFAULT_OLLAMA_ENDPOINT)).rstrip("/")
+        for suffix in ("/api/chat", "/v1/chat/completions", "/v1"):
+            if base.endswith(suffix):
+                base = base[: -len(suffix)]
+                break
+        self.base_url = base.rstrip("/")
+        self.endpoint = f"{self.base_url}/api/chat"
+        self.model_id = model or os.getenv("OLLAMA_MODEL", DEFAULT_OLLAMA_MODEL)
+        self.timeout = timeout or int(os.getenv("OLLAMA_TIMEOUT", "300"))
+        self.verbose = os.getenv(
+            "OLLAMA_VERBOSE", os.getenv("DICE_LLM_VERBOSE", "false")
+        ).lower() in {"1", "true", "yes", "on"}
+        self.log_max_chars = max(500, int(os.getenv("DICE_LLM_LOG_MAX_CHARS", "12000")))
+
+    def _log_text(self, value: object) -> str:
+        text = str(value)
+        if len(text) <= self.log_max_chars:
+            return text
+        return f"{text[:self.log_max_chars]}... [truncated]"
+
+    def list_models(self) -> List[str]:
+        """Return the model tags served by the configured Ollama instance."""
+        try:
+            response = requests.get(f"{self.base_url}/api/tags", timeout=5)
+            response.raise_for_status()
+            data = response.json()
+        except (requests.RequestException, ValueError) as exc:
+            raise LLMAPIError(f"Ollama is not reachable at {self.base_url}: {exc}") from exc
+        models = data.get("models") if isinstance(data, dict) else None
+        if not isinstance(models, list):
+            return []
+        return [entry["name"] for entry in models if isinstance(entry, dict) and entry.get("name")]
+
+    def chat(
+        self,
+        messages: List[Dict[str, str]],
+        temperature: float = 0.0,
+        max_new_tokens: int = 1024,
+        n: int = 1,
+        do_sample: Optional[bool] = None,
+    ) -> List[str]:
+        # Ollama has no `n` parameter, so sample sequentially.
+        return [
+            self._complete(messages, temperature, max_new_tokens)
+            for _ in range(max(1, int(n)))
+        ]
+
+    def _complete(
+        self,
+        messages: List[Dict[str, str]],
+        temperature: float,
+        max_new_tokens: int,
+    ) -> str:
+        payload: Dict[str, Any] = {
+            "model": self.model_id,
+            "messages": messages,
+            "stream": False,
+            "options": {
+                "temperature": float(temperature),
+                "num_predict": int(max_new_tokens),
+            },
+        }
+        if self.verbose:
+            LOGGER.info(
+                "OLLAMA REQUEST endpoint=%s timeout=%ss body=%s",
+                self.endpoint,
+                self.timeout,
+                self._log_text(json.dumps(payload, ensure_ascii=False, indent=2)),
+            )
+        try:
+            response = requests.post(self.endpoint, json=payload, timeout=self.timeout)
+            if self.verbose:
+                LOGGER.info(
+                    "OLLAMA RESPONSE status=%s body=%s",
+                    response.status_code,
+                    self._log_text(response.text),
+                )
+            response.raise_for_status()
+            data = response.json()
+        except requests.Timeout as exc:
+            raise LLMAPIError(
+                f"Ollama did not respond within {self.timeout}s. "
+                "Increase OLLAMA_TIMEOUT or use a smaller model."
+            ) from exc
+        except requests.RequestException as exc:
+            raise LLMAPIError(
+                f"Ollama request to {self.endpoint} failed: {exc}. "
+                "Is `ollama serve` running and the model pulled?"
+            ) from exc
+        except ValueError as exc:
+            raise LLMAPIError("Ollama returned invalid JSON.") from exc
+
+        if isinstance(data, dict) and data.get("error"):
+            raise LLMAPIError(f"Ollama error: {data['error']}")
+
+        message = data.get("message") if isinstance(data, dict) else None
+        content = message.get("content") if isinstance(message, dict) else None
+        text = _THINK_BLOCK.sub("", content).strip() if isinstance(content, str) else ""
+        if not text and isinstance(message, dict):
+            thinking = message.get("thinking")
+            if isinstance(thinking, str):
+                text = thinking.strip()
+        if not text:
+            raise LLMAPIError("Ollama returned an empty message.")
+        return text
+
+    def __repr__(self) -> str:
+        return f"OllamaChat(model={self.model_id!r}, endpoint={self.endpoint!r})"
+
+
+def create_chat_client(provider: Optional[str] = None, **kwargs):
+    """Build the chat client for `provider` ('dice' or 'ollama')."""
+    name = (provider or DEFAULT_PROVIDER or PROVIDER_DICE).strip().lower()
+    if name == PROVIDER_OLLAMA:
+        return OllamaChat(**kwargs)
+    if name in {PROVIDER_DICE, "dice-llm", "dice_llm", "openai"}:
+        return OpenAICompatibleChat(**kwargs)
+    raise LLMAPIError(f"Unknown LLM provider {name!r}. Use 'dice' or 'ollama'.")
+
+
+def describe_providers() -> List[Dict[str, Any]]:
+    """Report the selectable providers and whether they are usable right now."""
+    dice_ready = bool(os.getenv("DICE_LLM_API_KEY"))
+    ollama = OllamaChat()
+    try:
+        ollama_models = ollama.list_models()
+        ollama_ready = True
+        ollama_detail = None
+    except LLMAPIError as exc:
+        ollama_models = []
+        ollama_ready = False
+        ollama_detail = str(exc)
+
+    return [
+        {
+            "id": PROVIDER_DICE,
+            "label": "DICE LLM API",
+            "model": os.getenv("DICE_LLM_MODEL", "general-purpose"),
+            "models": [],
+            "available": dice_ready,
+            "detail": None if dice_ready else "DICE_LLM_API_KEY is not configured on the server.",
+            "default": DEFAULT_PROVIDER != PROVIDER_OLLAMA,
+        },
+        {
+            "id": PROVIDER_OLLAMA,
+            "label": "Ollama (local)",
+            "model": ollama.model_id,
+            "models": ollama_models,
+            "available": ollama_ready,
+            "detail": ollama_detail,
+            "default": DEFAULT_PROVIDER == PROVIDER_OLLAMA,
+        },
+    ]

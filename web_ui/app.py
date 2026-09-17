@@ -13,7 +13,7 @@ Endpoints:
 from __future__ import annotations
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Literal, Optional
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
@@ -29,7 +29,7 @@ from dbpedia_client import (
     get_triples,
     search_entities,
 )
-from llm_api import LLMAPIError
+from llm_api import LLMAPIError, describe_providers
 from tot4es_service import summarize_entity
 
 STATIC_DIR = Path(__file__).parent / "static"
@@ -41,6 +41,8 @@ class EntitySummaryRequest(BaseModel):
     entity_label: str = Field(..., min_length=1, max_length=300)
     triples: List[Dict[str, Any]] = Field(..., min_length=1, max_length=200)
     summary_length: int = Field(5, ge=1, le=20)
+    provider: Optional[Literal["dice", "ollama"]] = None
+    model: Optional[str] = Field(None, min_length=1, max_length=100)
 
 
 @app.get("/api/search")
@@ -83,6 +85,12 @@ def api_entity(
     return result
 
 
+@app.get("/api/providers")
+def api_providers():
+    """List the LLM backends the UI can pick from and their readiness."""
+    return {"providers": describe_providers()}
+
+
 @app.post("/api/summarize")
 def api_summarize(request: EntitySummaryRequest):
     """Select an entity summary with the task-decomposed ToT4ES algorithm."""
@@ -91,6 +99,8 @@ def api_summarize(request: EntitySummaryRequest):
             entity_label=request.entity_label,
             triples=request.triples,
             summary_length=request.summary_length,
+            provider=request.provider,
+            model=request.model,
         )
     except LLMAPIError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc

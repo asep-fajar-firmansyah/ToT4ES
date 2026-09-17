@@ -18,12 +18,41 @@ const triplesSection = document.getElementById("triples-section");
 const triplesBody = document.getElementById("triples-body");
 const triplesCount = document.getElementById("triples-count");
 const summarizeButton = document.getElementById("summarize-button");
+const providerSelect = document.getElementById("provider-select");
 const summarySection = document.getElementById("summary-section");
 const summaryList = document.getElementById("summary-list");
 const summaryCount = document.getElementById("summary-count");
 
 let currentEntity = null;
 let currentTriples = [];
+
+loadProviders();
+
+async function loadProviders() {
+  try {
+    const response = await fetch("/api/providers");
+    const payload = await response.json();
+    if (!response.ok) throw new Error(payload.detail || `Request failed (${response.status})`);
+    providerSelect.replaceChildren();
+    (payload.providers || []).forEach((provider) => {
+      const option = document.createElement("option");
+      option.value = provider.id;
+      option.textContent = provider.available
+        ? `${provider.label} \u2014 ${provider.model}`
+        : `${provider.label} (unavailable)`;
+      option.disabled = !provider.available;
+      option.title = provider.detail || provider.model || "";
+      if (provider.default && provider.available) option.selected = true;
+      providerSelect.appendChild(option);
+    });
+    const usable = (payload.providers || []).find((provider) => provider.available);
+    if (usable && providerSelect.selectedOptions[0]?.disabled) {
+      providerSelect.value = usable.id;
+    }
+  } catch (error) {
+    statusEl.textContent = `Could not load LLM providers: ${error.message}`;
+  }
+}
 
 form.addEventListener("submit", (event) => {
   event.preventDefault();
@@ -113,18 +142,26 @@ function render(payload) {
 
 summarizeButton.addEventListener("click", async () => {
   if (!currentEntity || !currentTriples.length) return;
+  const provider = providerSelect.value || null;
   summarizeButton.disabled = true;
-  statusEl.textContent = "Running ToT4ES selection through the LLM API\u2026";
+  statusEl.textContent = `Running ToT4ES selection through ${provider || "the LLM API"}\u2026`;
   try {
     const response = await fetch("/api/summarize", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ entity_label: currentEntity.label, triples: currentTriples, summary_length: 5 }),
+      body: JSON.stringify({
+        entity_label: currentEntity.label,
+        triples: currentTriples,
+        summary_length: 5,
+        provider,
+      }),
     });
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.detail || `Request failed (${response.status})`);
     renderSummary(payload.summary || []);
-    statusEl.textContent = "ToT4ES summary generated.";
+    statusEl.textContent = payload.model
+      ? `ToT4ES summary generated with ${payload.model}.`
+      : "ToT4ES summary generated.";
   } catch (error) {
     statusEl.textContent = error.message;
   } finally {

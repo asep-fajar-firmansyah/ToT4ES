@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 SCRIPTS_DIR = Path(__file__).resolve().parent.parent / "scripts"
 if str(SCRIPTS_DIR) not in sys.path:
@@ -23,7 +23,7 @@ from tot_modules import (  # noqa: E402
     make_relatedness_prompt,
 )
 
-from llm_api import OpenAICompatibleChat  # noqa: E402
+from llm_api import create_chat_client  # noqa: E402
 
 DEFAULT_SUMMARY_LENGTH = 5
 
@@ -75,6 +75,8 @@ def summarize_entity(
     entity_label: str,
     triples: List[Dict[str, Any]],
     summary_length: int = DEFAULT_SUMMARY_LENGTH,
+    provider: Optional[str] = None,
+    model: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Select an entity summary with the repository's task-decomposed ToT4ES."""
     if not triples:
@@ -84,7 +86,7 @@ def summarize_entity(
     all_triples = [_triple_text(triple) for triple in triples]
     frequencies = _predicate_frequencies(all_triples)
     roles = _semantic_roles(all_triples)
-    llm = OpenAICompatibleChat()
+    llm = create_chat_client(provider, **({"model": model} if model else {}))
     input_seq = "\n".join(all_triples)
 
     search = TaskDecomposedToT(
@@ -125,4 +127,6 @@ def summarize_entity(
         "summary": selected,
         "selected_indices": selected_indices,
         "summary_length": len(selected),
+        "provider": getattr(llm, "provider_id", None) or type(llm).__name__,
+        "model": llm.model_id,
     }

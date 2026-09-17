@@ -49,7 +49,11 @@
     <section id="triples-section" class="hidden">
       <div class="section-heading">
         <h3>Triples (<span id="triples-count">0</span>)</h3>
-        <button type="button" id="summarize-button" class="summary-button">Generate ToT4ES summary</button>
+        <div class="summary-controls">
+          <label for="provider-select" class="provider-label">LLM</label>
+          <select id="provider-select" class="provider-select" title="Choose the LLM backend"></select>
+          <button type="button" id="summarize-button" class="summary-button">Generate ToT4ES summary</button>
+        </div>
       </div>
       <table class="triples">
         <thead>
