@@ -67,9 +67,14 @@ shown as unavailable.
 ### 2. Ollama (local, no API key)
 
 ```bash
-ollama pull qwen3.5:0.8b
-ollama serve            # usually already running as a service
+ollama pull qwen3.5:0.8b   # or any tag from https://ollama.com/library
+ollama list                # models offered by the dropdown
+ollama serve               # usually already running as a service
 ```
+
+Every model reported by `/api/tags` is listed in the UI dropdown, so a newly
+pulled model shows up after a page reload — no restart or config change needed.
+`OLLAMA_MODEL` only decides which one is preselected.
 
 | Variable | Default |
 | --- | --- |
@@ -109,6 +114,13 @@ The summary endpoint accepts JSON with `entity_label`, `triples`, optional
 `summary_length` (1-20), optional `provider` (`dice` or `ollama`) and optional
 `model` to override the provider default. Without `provider` it falls back to
 `LLM_PROVIDER`, then to the DICE API.
+
+Both providers receive the same search settings: `temperature` (0.8 for thought
+generation, 0.3 for evaluation), the per-step token budget, and `n` samples —
+sequentially for Ollama, and via the `n` field for the DICE gateway with a
+sequential top-up when it returns fewer choices than requested. Reasoning
+preambles, `<think>` blocks and code fences are stripped from both.
+
 Keep `DICE_LLM_API_KEY` server-side and do not commit it. The bearer token
 included in an example request should be revoked and replaced if it is real.
 

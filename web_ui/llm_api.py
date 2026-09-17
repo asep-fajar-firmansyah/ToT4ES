@@ -84,8 +84,30 @@ class OpenAICompatibleChat:
         n: int = 1,
         do_sample: Optional[bool] = None,
     ) -> List[str]:
-        # Keep the default body identical to the verified gateway example.
-        payload = {"model": self.model_id, "messages": messages}
+        wanted = max(1, int(n))
+        outputs = self._request(messages, temperature, max_new_tokens, wanted)
+        # Gateways that ignore `n` return a single choice; top the rest up.
+        for _ in range(wanted - len(outputs)):
+            if len(outputs) >= wanted:
+                break
+            outputs.extend(self._request(messages, temperature, max_new_tokens, 1))
+        return outputs[:wanted]
+
+    def _request(
+        self,
+        messages: List[Dict[str, str]],
+        temperature: float,
+        max_new_tokens: int,
+        n: int,
+    ) -> List[str]:
+        payload: Dict[str, Any] = {
+            "model": self.model_id,
+            "messages": messages,
+            "temperature": float(temperature),
+            "max_tokens": int(max_new_tokens),
+        }
+        if n > 1:
+            payload["n"] = int(n)
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
@@ -153,7 +175,7 @@ class OpenAICompatibleChat:
             message = choice.get("message", {})
             content = message.get("content") if isinstance(message, dict) else None
             if isinstance(content, str) and content.strip():
-                outputs.append(content.strip())
+                outputs.append(_clean_answer(content))
                 continue
             if isinstance(content, list):
                 parts = [
@@ -161,7 +183,7 @@ class OpenAICompatibleChat:
                     for part in content
                     if isinstance(part, dict) and isinstance(part.get("text"), str)
                 ]
-                combined = "".join(parts).strip()
+                combined = _clean_answer("".join(parts))
                 if combined:
                     outputs.append(combined)
                     continue
@@ -169,14 +191,14 @@ class OpenAICompatibleChat:
                 for field in ("reasoning_content", "reasoning", "text"):
                     reasoning = message.get(field)
                     if isinstance(reasoning, str) and reasoning.strip():
-                        outputs.append(reasoning.strip())
+                        outputs.append(_clean_answer(reasoning))
                         break
                 else:
                     continue
                 continue
             legacy_text = choice.get("text")
             if isinstance(legacy_text, str) and legacy_text.strip():
-                outputs.append(legacy_text.strip())
+                outputs.append(_clean_answer(legacy_text))
         if not outputs:
             raise LLMAPIError("LLM API returned choices without usable text content.")
         return outputs

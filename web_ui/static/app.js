@@ -34,20 +34,29 @@ async function loadProviders() {
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.detail || `Request failed (${response.status})`);
     providerSelect.replaceChildren();
+    let fallback = null;
     (payload.providers || []).forEach((provider) => {
-      const option = document.createElement("option");
-      option.value = provider.id;
-      option.textContent = provider.available
-        ? `${provider.label} \u2014 ${provider.model}`
-        : `${provider.label} (unavailable)`;
-      option.disabled = !provider.available;
-      option.title = provider.detail || provider.model || "";
-      if (provider.default && provider.available) option.selected = true;
-      providerSelect.appendChild(option);
+      const models = provider.models && provider.models.length ? provider.models : [provider.model];
+      const group = document.createElement("optgroup");
+      group.label = provider.available ? provider.label : `${provider.label} (unavailable)`;
+      models.forEach((model) => {
+        const option = document.createElement("option");
+        option.value = `${provider.id}::${model}`;
+        option.textContent = model;
+        option.dataset.provider = provider.id;
+        option.dataset.model = model;
+        option.disabled = !provider.available;
+        option.title = provider.detail || `${provider.label} \u2014 ${model}`;
+        if (provider.available && !fallback) fallback = option.value;
+        if (provider.default && provider.available && model === provider.model) {
+          option.selected = true;
+        }
+        group.appendChild(option);
+      });
+      providerSelect.appendChild(group);
     });
-    const usable = (payload.providers || []).find((provider) => provider.available);
-    if (usable && providerSelect.selectedOptions[0]?.disabled) {
-      providerSelect.value = usable.id;
+    if (fallback && (!providerSelect.selectedOptions[0] || providerSelect.selectedOptions[0].disabled)) {
+      providerSelect.value = fallback;
     }
   } catch (error) {
     statusEl.textContent = `Could not load LLM providers: ${error.message}`;
@@ -142,9 +151,11 @@ function render(payload) {
 
 summarizeButton.addEventListener("click", async () => {
   if (!currentEntity || !currentTriples.length) return;
-  const provider = providerSelect.value || null;
+  const selected = providerSelect.selectedOptions[0];
+  const provider = selected?.dataset.provider || null;
+  const model = selected?.dataset.model || null;
   summarizeButton.disabled = true;
-  statusEl.textContent = `Running ToT4ES selection through ${provider || "the LLM API"}\u2026`;
+  statusEl.textContent = `Running ToT4ES selection through ${model || "the LLM API"}\u2026`;
   try {
     const response = await fetch("/api/summarize", {
       method: "POST",
@@ -154,6 +165,7 @@ summarizeButton.addEventListener("click", async () => {
         triples: currentTriples,
         summary_length: 5,
         provider,
+        model,
       }),
     });
     const payload = await response.json();
