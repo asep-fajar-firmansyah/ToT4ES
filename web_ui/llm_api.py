@@ -23,10 +23,25 @@ DEFAULT_OLLAMA_ENDPOINT = "http://localhost:11434"
 DEFAULT_OLLAMA_MODEL = "qwen3.5:0.8b"
 
 _THINK_BLOCK = re.compile(r"<think>.*?</think>", re.DOTALL | re.IGNORECASE)
+_CODE_FENCE = re.compile(r"```(?:json)?\s*(.*?)```", re.DOTALL | re.IGNORECASE)
+_JSON_ARRAY = re.compile(r"\[\s*\{.*\}\s*\]", re.DOTALL)
 
 
 class LLMAPIError(RuntimeError):
     """Raised when the configured chat completion API cannot be used."""
+
+
+def _clean_answer(text: str) -> str:
+    """Drop reasoning preambles and code fences local models wrap answers in."""
+    cleaned = _THINK_BLOCK.sub("", text).strip()
+    fenced = _CODE_FENCE.search(cleaned)
+    if fenced:
+        cleaned = fenced.group(1).strip()
+    if not cleaned.startswith("["):
+        array = _JSON_ARRAY.search(cleaned)
+        if array:
+            cleaned = array.group(0)
+    return cleaned.strip()
 
 
 class OpenAICompatibleChat:
@@ -190,6 +205,11 @@ class OllamaChat:
         self.endpoint = f"{self.base_url}/api/chat"
         self.model_id = model or os.getenv("OLLAMA_MODEL", DEFAULT_OLLAMA_MODEL)
         self.timeout = timeout or int(os.getenv("OLLAMA_TIMEOUT", "300"))
+        # Reasoning preambles eat the small token budgets ToT4ES uses, so
+        # thinking is off unless the user asks for it.
+        self.think = os.getenv("OLLAMA_THINK", "false").lower() in {"1", "true", "yes", "on"}
+        self._think_supported = True
+        self.min_predict = int(os.getenv("OLLAMA_MIN_PREDICT", "256"))
         self.verbose = os.getenv(
             "OLLAMA_VERBOSE", os.getenv("DICE_LLM_VERBOSE", "false")
         ).lower() in {"1", "true", "yes", "on"}
@@ -240,9 +260,29 @@ class OllamaChat:
             "stream": False,
             "options": {
                 "temperature": float(temperature),
-                "num_predict": int(max_new_tokens),
+                "num_predict": max(int(max_new_tokens), self.min_predict),
             },
         }
+        if self._think_supported:
+            payload["think"] = self.think
+
+        data = self._post(payload)
+
+        if isinstance(data, dict) and data.get("error"):
+            raise LLMAPIError(f"Ollama error: {data['error']}")
+
+        message = data.get("message") if isinstance(data, dict) else None
+        content = message.get("content") if isinstance(message, dict) else None
+        text = _clean_answer(content) if isinstance(content, str) else ""
+        if not text and isinstance(message, dict):
+            thinking = message.get("thinking")
+            if isinstance(thinking, str):
+                text = _clean_answer(thinking)
+        if not text:
+            raise LLMAPIError("Ollama returned an empty message.")
+        return text
+
+    def _post(self, payload: Dict[str, Any]) -> Dict[str, Any]:
         if self.verbose:
             LOGGER.info(
                 "OLLAMA REQUEST endpoint=%s timeout=%ss body=%s",
@@ -258,8 +298,16 @@ class OllamaChat:
                     response.status_code,
                     self._log_text(response.text),
                 )
+            if (
+                response.status_code == 400
+                and "think" in payload
+                and "think" in response.text.lower()
+            ):
+                self._think_supported = False
+                payload.pop("think")
+                return self._post(payload)
             response.raise_for_status()
-            data = response.json()
+            return response.json()
         except requests.Timeout as exc:
             raise LLMAPIError(
                 f"Ollama did not respond within {self.timeout}s. "
@@ -272,20 +320,6 @@ class OllamaChat:
             ) from exc
         except ValueError as exc:
             raise LLMAPIError("Ollama returned invalid JSON.") from exc
-
-        if isinstance(data, dict) and data.get("error"):
-            raise LLMAPIError(f"Ollama error: {data['error']}")
-
-        message = data.get("message") if isinstance(data, dict) else None
-        content = message.get("content") if isinstance(message, dict) else None
-        text = _THINK_BLOCK.sub("", content).strip() if isinstance(content, str) else ""
-        if not text and isinstance(message, dict):
-            thinking = message.get("thinking")
-            if isinstance(thinking, str):
-                text = thinking.strip()
-        if not text:
-            raise LLMAPIError("Ollama returned an empty message.")
-        return text
 
     def __repr__(self) -> str:
         return f"OllamaChat(model={self.model_id!r}, endpoint={self.endpoint!r})"

@@ -76,6 +76,8 @@ ollama serve            # usually already running as a service
 | `OLLAMA_ENDPOINT` | `http://localhost:11434` |
 | `OLLAMA_MODEL` | `qwen3.5:0.8b` |
 | `OLLAMA_TIMEOUT` | `300` |
+| `OLLAMA_THINK` | `false` — reasoning preambles exhaust the small ToT4ES token budgets |
+| `OLLAMA_MIN_PREDICT` | `256` — floor for `num_predict`, prevents truncated answers |
 | `OLLAMA_VERBOSE` | falls back to `DICE_LLM_VERBOSE` |
 
 Set `LLM_PROVIDER=ollama` to make Ollama the preselected provider:
@@ -87,10 +89,11 @@ export OLLAMA_MODEL=qwen3.5:0.8b
 uvicorn app:app --reload --port 8000
 ```
 
-Requests hit Ollama's native `/api/chat` with `stream: false`; `temperature`
-and `num_predict` are mapped from the ToT4ES search settings, `n > 1` is
-emulated with sequential calls, and `<think>...</think>` blocks emitted by
-reasoning models are stripped from the answer.
+Requests hit Ollama's native `/api/chat` with `stream: false` and
+`think: false` (retried without the field if the model rejects it);
+`temperature` and `num_predict` are mapped from the ToT4ES search settings,
+`n > 1` is emulated with sequential calls, and `<think>` blocks, code fences
+and reasoning preambles are stripped so the evaluator receives plain JSON.
 
 ## API
 
