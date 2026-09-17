@@ -115,11 +115,12 @@ The summary endpoint accepts JSON with `entity_label`, `triples`, optional
 `model` to override the provider default. Without `provider` it falls back to
 `LLM_PROVIDER`, then to the DICE API.
 
-Both providers receive the same search settings: `temperature` (0.8 for thought
-generation, 0.3 for evaluation), the per-step token budget, and `n` samples —
-sequentially for Ollama, and via the `n` field for the DICE gateway with a
-sequential top-up when it returns fewer choices than requested. Reasoning
-preambles, `<think>` blocks and code fences are stripped from both.
+Both providers run the identical ToT4ES search, but only Ollama receives the
+search's sampling settings: `temperature` (0.8 for thought generation, 0.3 for
+evaluation), the per-step token budget and `n` samples (sequential calls). The
+DICE gateway rejects those fields with HTTP 400, so its request body stays
+`{model, messages}` and the gateway's own defaults apply. Reasoning preambles,
+`<think>` blocks and code fences are stripped from both.
 
 Keep `DICE_LLM_API_KEY` server-side and do not commit it. The bearer token
 included in an example request should be revoked and replaced if it is real.

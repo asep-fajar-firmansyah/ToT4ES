@@ -84,30 +84,8 @@ class OpenAICompatibleChat:
         n: int = 1,
         do_sample: Optional[bool] = None,
     ) -> List[str]:
-        wanted = max(1, int(n))
-        outputs = self._request(messages, temperature, max_new_tokens, wanted)
-        # Gateways that ignore `n` return a single choice; top the rest up.
-        for _ in range(wanted - len(outputs)):
-            if len(outputs) >= wanted:
-                break
-            outputs.extend(self._request(messages, temperature, max_new_tokens, 1))
-        return outputs[:wanted]
-
-    def _request(
-        self,
-        messages: List[Dict[str, str]],
-        temperature: float,
-        max_new_tokens: int,
-        n: int,
-    ) -> List[str]:
-        payload: Dict[str, Any] = {
-            "model": self.model_id,
-            "messages": messages,
-            "temperature": float(temperature),
-            "max_tokens": int(max_new_tokens),
-        }
-        if n > 1:
-            payload["n"] = int(n)
+        # The gateway rejects extra fields with 400, so send only model+messages.
+        payload: Dict[str, Any] = {"model": self.model_id, "messages": messages}
         headers = {
             "Authorization": f"Bearer {self.api_key}",
             "Content-Type": "application/json",
