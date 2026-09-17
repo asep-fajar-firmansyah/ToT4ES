@@ -7,7 +7,7 @@ Implements the architecture with separate task-specific thought generators
 """
 
 from collections import deque
-from typing import Callable, List, Dict, Optional
+from typing import Any, Callable, List, Dict, Optional
 import time
 
 from .tree_node import TreeNode
@@ -450,7 +450,7 @@ class TaskDecomposedToT:
         print(f"\n[HEURISTIC SCORING] Evaluated {len(states)} states")
         return scores
 
-    def bfs(self, verbose: bool = True) -> str:
+    def bfs(self, verbose: bool = True, event_callback: Optional[Callable[[Dict[str, Any]], None]] = None) -> str:
         """
         Perform task-decomposed BFS search.
         
@@ -459,8 +459,12 @@ class TaskDecomposedToT:
         """
         queue = deque()
         queue.append(self.root)
+        if event_callback:
+            event_callback({"type": "start", "step": 0, "total_steps": self.n_steps, "state": ""})
 
         for step in range(1, self.n_steps + 1):
+            if event_callback:
+                event_callback({"type": "step_start", "step": step, "total_steps": self.n_steps})
             if verbose:
                 print(f"\n{'='*70}")
                 print(f"Step {step} / {self.n_steps}")
@@ -478,6 +482,14 @@ class TaskDecomposedToT:
             for i in range(current_layer_size):
                 node = queue.popleft()
 
+                if event_callback:
+                    event_callback({
+                        "type": "expand",
+                        "step": step,
+                        "state": node.state,
+                        "triple_ids": node.get_triple_ids(),
+                    })
+
                 if verbose:
                     print(f"\n--- Expanding node {i + 1}/{current_layer_size} ---")
                     print(f"Current state: {node}")
@@ -486,6 +498,13 @@ class TaskDecomposedToT:
 
                 # Generate thoughts from all three tasks
                 all_task_thoughts = self.generate_thoughts_all_tasks(node.state, verbose)
+                if event_callback:
+                    event_callback({
+                        "type": "thoughts",
+                        "step": step,
+                        "state": node.state,
+                        "tasks": all_task_thoughts,
+                    })
 
                 # Parse current state to avoid duplicates
                 existing_ids = set()
@@ -538,6 +557,12 @@ class TaskDecomposedToT:
                     print(f"Children created: {children_created}")
                     if children_created == 0:
                         print("WARNING: No valid children - branch exhausted")
+                if event_callback:
+                    event_callback({
+                        "type": "children",
+                        "step": step,
+                        "states": [child.state for child in list(node.children) if child.depth == node.depth + 1],
+                    })
 
             thought_gen_time = time.time() - thought_gen_start
 
@@ -566,6 +591,13 @@ class TaskDecomposedToT:
                 eval_time = time.time() - eval_start
                 for node, val in zip(queue, values):
                     node.value = val
+                if event_callback:
+                    event_callback({
+                        "type": "evaluated",
+                        "step": step,
+                        "states": states,
+                        "scores": values,
+                    })
 
             if verbose:
                 print(f"\n⏱  Step {step} timing: thought_gen={thought_gen_time:.1f}s, eval={eval_time:.1f}s, total={thought_gen_time+eval_time:.1f}s")
@@ -598,12 +630,27 @@ class TaskDecomposedToT:
                 # Use sorted order directly instead of preserving original queue order
                 queue = deque(top_nodes)
 
+            if event_callback:
+                event_callback({
+                    "type": "pruned",
+                    "step": step,
+                    "states": [node.state for node in queue],
+                    "keep": keep_k,
+                })
+
             if verbose:
                 print(f"Queue size after pruning: {len(queue)}")
 
         if not queue:
             if verbose:
                 print("\nSearch finished with empty queue; returning root state.")
+            if event_callback:
+                event_callback({
+                    "type": "complete",
+                    "step": self.n_steps,
+                    "state": self.root.state,
+                    "triple_ids": self.root.get_triple_ids(),
+                })
             return self.root.state
 
         # Best node
@@ -621,6 +668,14 @@ class TaskDecomposedToT:
             print(f"  Triple count: {len(best_node.get_triple_ids())}")
             print(f"  Selected triple IDs: {best_node.state}")
             print("="*70)
+
+        if event_callback:
+            event_callback({
+                "type": "complete",
+                "step": self.n_steps,
+                "state": best_node.state,
+                "triple_ids": best_node.get_triple_ids(),
+            })
 
         return best_node.state
 

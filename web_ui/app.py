@@ -12,11 +12,14 @@ Endpoints:
 
 from __future__ import annotations
 
+import json
+import queue
+import threading
 from pathlib import Path
 from typing import Any, Dict, List, Literal, Optional
 
 from fastapi import FastAPI, File, HTTPException, Query, UploadFile
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -127,6 +130,43 @@ def api_summarize(request: EntitySummaryRequest):
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     except (KeyError, ValueError, TypeError) as exc:
         raise HTTPException(status_code=400, detail=f"Invalid triple payload: {exc}") from exc
+
+
+@app.post("/api/summarize/stream")
+def api_summarize_stream(request: EntitySummaryRequest):
+    """Stream real BFS/LLM search events as newline-delimited JSON."""
+    events: queue.Queue = queue.Queue()
+    finished = object()
+
+    def emit(event: Dict[str, Any]) -> None:
+        events.put(event)
+
+    def run_search() -> None:
+        try:
+            result = summarize_entity(
+                entity_label=request.entity_label,
+                triples=request.triples,
+                summary_length=request.summary_length,
+                provider=request.provider,
+                model=request.model,
+                event_callback=emit,
+            )
+            events.put({"type": "result", "result": result})
+        except Exception as exc:  # delivered to the browser as a final event
+            events.put({"type": "error", "message": str(exc)})
+        finally:
+            events.put(finished)
+
+    threading.Thread(target=run_search, daemon=True).start()
+
+    def stream():
+        while True:
+            event = events.get()
+            if event is finished:
+                break
+            yield json.dumps(event, ensure_ascii=False) + "\n"
+
+    return StreamingResponse(stream(), media_type="application/x-ndjson")
 
 
 @app.get("/")

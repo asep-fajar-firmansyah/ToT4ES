@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Callable, Dict, List, Optional
 
 SCRIPTS_DIR = Path(__file__).resolve().parent.parent / "scripts"
 if str(SCRIPTS_DIR) not in sys.path:
@@ -77,6 +77,7 @@ def summarize_entity(
     summary_length: int = DEFAULT_SUMMARY_LENGTH,
     provider: Optional[str] = None,
     model: Optional[str] = None,
+    event_callback: Optional[Callable[[Dict[str, Any]], None]] = None,
 ) -> Dict[str, Any]:
     """Select an entity summary with the repository's task-decomposed ToT4ES."""
     if not triples:
@@ -113,7 +114,7 @@ def summarize_entity(
     search.eval_temperature = 0.3
     search.do_sample = None
 
-    best_state = search.bfs(verbose=False)
+    best_state = search.bfs(verbose=False, event_callback=event_callback)
     selected_indices = [
         int(value) for value in best_state.splitlines() if value.strip().isdigit()
     ]

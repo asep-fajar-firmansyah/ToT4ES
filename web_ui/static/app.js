@@ -43,6 +43,8 @@ let currentEntity = null;
 let currentTriples = [];
 let generationTimer = null;
 let generationStartedAt = 0;
+let generationTreeVisibleLevel = 0;
+let generationTreeLabels = new Map();
 
 generationClose.addEventListener("click", closeGenerationModal);
 
@@ -215,7 +217,7 @@ summarizeButton.addEventListener("click", async () => {
   openGenerationModal(currentEntity.label);
   statusEl.textContent = `Running ToT4ES selection through ${model || "the LLM API"}\u2026`;
   try {
-    const response = await fetch("/api/summarize", {
+    const response = await fetch("/api/summarize/stream", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
@@ -226,8 +228,32 @@ summarizeButton.addEventListener("click", async () => {
         model,
       }),
     });
-    const payload = await response.json();
-    if (!response.ok) throw new Error(payload.detail || `Request failed (${response.status})`);
+    if (!response.ok) throw new Error(`Request failed (${response.status})`);
+    const reader = response.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let payload = null;
+    while (true) {
+      const { value, done } = await reader.read();
+      buffer += decoder.decode(value || new Uint8Array(), { stream: !done });
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        const event = JSON.parse(line);
+        handleGenerationEvent(event);
+        if (event.type === "result") payload = event.result;
+        if (event.type === "error") throw new Error(event.message);
+      }
+      if (done) break;
+    }
+    if (buffer.trim()) {
+      const event = JSON.parse(buffer);
+      handleGenerationEvent(event);
+      if (event.type === "result") payload = event.result;
+      if (event.type === "error") throw new Error(event.message);
+    }
+    if (!payload) throw new Error("Summary stream ended without a result.");
     renderSummary(payload.summary || []);
     summaryRuntime.textContent = `Runtime ${formatRuntime(performance.now() - startedAt)}`;
     finishGenerationModal(true, payload.summary || []);
@@ -253,23 +279,53 @@ function openGenerationModal(entityLabel) {
   generationStartedAt = performance.now();
   generationStatus.textContent = `Exploring candidate triples for ${entityLabel}...`;
   generationStep.textContent = "Step 0 of 5";
+  generationTreeVisibleLevel = 0;
+  generationTreeLabels = new Map();
   drawSearchTree(0, []);
   clearInterval(generationTimer);
-  generationTimer = setInterval(() => {
-    const elapsed = performance.now() - generationStartedAt;
-    const stage = Math.min(5, Math.floor(elapsed / 850));
-    generationRuntime.textContent = formatRuntime(elapsed);
-    generationStep.textContent = `Step ${stage} of 5`;
-    generationStatus.textContent = [
-      "Preparing the current state...",
-      "Generating relatedness candidates...",
-      "Scoring informativeness...",
-      "Checking diversity...",
-      "Evaluating candidate summaries...",
-      "Selecting the best path...",
-    ][stage];
-    drawSearchTree(stage, []);
-  }, 120);
+}
+
+function handleGenerationEvent(event) {
+  const elapsed = performance.now() - generationStartedAt;
+  generationRuntime.textContent = formatRuntime(elapsed);
+  const stage = Math.min(5, event.step || 0);
+  generationStep.textContent = `Step ${stage} of 5`;
+  if (event.type === "start") {
+    generationStatus.textContent = "Step 0: current state initialized.";
+  } else if (event.type === "expand") {
+    generationStatus.textContent = `Step ${stage}: expanding state ${event.triple_ids?.join(", ") || "[]"}.`;
+  } else if (event.type === "thoughts") {
+    const tasks = Object.entries(event.tasks || {})
+      .map(([name, values]) => `${name}: ${values.join(", ") || "no valid triple"}`)
+      .join(" | ");
+    generationStatus.textContent = `Step ${stage}: LLM decomposition returned ${tasks}.`;
+  } else if (event.type === "children") {
+    generationStatus.textContent = `Step ${stage}: created ${event.states.length} candidate nodes.`;
+  } else if (event.type === "evaluated") {
+    generationStatus.textContent = `Step ${stage}: LLM evaluated ${event.states.length} candidate states.`;
+  } else if (event.type === "pruned") {
+    generationStatus.textContent = `Step ${stage}: retained ${event.states.length} best candidate states.`;
+  }
+    const liveValues = event.type === "thoughts"
+      ? Object.values(event.tasks || {}).flat()
+      : event.states || event.triple_ids || [];
+  const visibleLevel = event.type === "start" || event.type === "step_start" || event.type === "expand"
+    ? 0
+    : event.type === "thoughts"
+      ? 1
+      : event.type === "children" || event.type === "evaluated"
+        ? 2
+        : event.type === "pruned"
+          ? 3
+          : event.type === "complete"
+            ? 5
+            : 0;
+  generationTreeVisibleLevel = Math.max(generationTreeVisibleLevel, visibleLevel);
+  liveValues.forEach((value, index) => {
+    const text = Array.isArray(value) ? `[${value.join(", ")}]` : String(value).replace(/\n/g, ", ");
+    generationTreeLabels.set(`${visibleLevel}:${index}`, text);
+  });
+  drawSearchTree(stage, event.triple_ids || [], liveValues, generationTreeVisibleLevel);
 }
 
 function finishGenerationModal(success, summary) {
@@ -281,7 +337,7 @@ function finishGenerationModal(success, summary) {
   generationStatus.textContent = success
     ? "Best summary path selected."
     : "Summary generation failed.";
-  drawSearchTree(success ? 5 : 0, summary.map((triple) => triple.index));
+  drawSearchTree(success ? 5 : 0, summary.map((triple) => triple.index), [], success ? 5 : 0);
   generationModal.setAttribute("aria-busy", "false");
   window.setTimeout(() => generationModal.classList.add("hidden"), success ? 700 : 250);
 }
@@ -293,7 +349,7 @@ function closeGenerationModal() {
   generationModal.setAttribute("aria-busy", "false");
 }
 
-function drawSearchTree(stage, selectedIndices) {
+function drawSearchTree(stage, selectedIndices, liveValues = [], visibleLevel = 0) {
   const nodes = [
     { id: 0, parent: null, x: 450, y: 35, label: "Current state", level: 0 },
     { id: 1, parent: 0, x: 180, y: 105, label: "Triple: [8]", level: 1 },
@@ -318,9 +374,17 @@ function drawSearchTree(stage, selectedIndices) {
     { id: 20, parent: 17, x: 345, y: 400, label: "Discard", level: 5 },
     { id: 21, parent: 18, x: 765, y: 400, label: "Discard", level: 5 },
   ];
-  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const visibleNodes = nodes.filter((node) => node.level === 0 || node.level <= visibleLevel);
+  const byId = new Map(visibleNodes.map((node) => [node.id, node]));
   const selectedPath = new Set([0, 2, 6, 12, 17, 20]);
   const selectedSet = new Set(selectedIndices || []);
+  const levelIndexes = new Map();
+  visibleNodes.filter((node) => node.level > 0).forEach((node) => {
+    const index = levelIndexes.get(node.level) || 0;
+    levelIndexes.set(node.level, index + 1);
+    const liveLabel = generationTreeLabels.get(`${node.level}:${index}`);
+    if (liveLabel) node.label = liveLabel;
+  });
   searchTree.replaceChildren();
   const defs = document.createElementNS(SVG_NS, "defs");
   const marker = document.createElementNS(SVG_NS, "marker");
@@ -339,7 +403,7 @@ function drawSearchTree(stage, selectedIndices) {
   searchTree.appendChild(defs);
 
   const edges = document.createElementNS(SVG_NS, "g");
-  nodes.filter((node) => node.parent !== null).forEach((node) => {
+  visibleNodes.filter((node) => node.parent !== null && byId.has(node.parent)).forEach((node) => {
     const parent = byId.get(node.parent);
     const edge = document.createElementNS(SVG_NS, "line");
     edge.setAttribute("x1", parent.x);
@@ -353,7 +417,7 @@ function drawSearchTree(stage, selectedIndices) {
   searchTree.appendChild(edges);
 
   const nodeLayer = document.createElementNS(SVG_NS, "g");
-  nodes.forEach((node) => {
+  visibleNodes.forEach((node) => {
     const group = document.createElementNS(SVG_NS, "g");
     const resolved = stage === 5 && selectedSet.size ? selectedPath.has(node.id) : selectedPath.has(node.id);
     const failed = node.level > 1 && !resolved;
