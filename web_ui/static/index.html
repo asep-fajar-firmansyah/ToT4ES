@@ -1,0 +1,73 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>ToT4ES &mdash; Entity Explorer</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <main class="container">
+    <header>
+      <h1>ToT4ES Entity Explorer</h1>
+      <p class="subtitle">Type an entity name to fetch its DBpedia description and triples.</p>
+    </header>
+
+    <form id="search-form" class="search-bar">
+      <input id="entity-input" type="text" name="entity" placeholder="e.g. Albert Einstein" autocomplete="off" required>
+      <label for="limit-input" class="sr-only">Number of triples</label>
+      <input id="limit-input" type="number" name="limit" value="30" min="1" max="200" title="Number of triples">
+      <button type="submit" id="submit-button">Search</button>
+    </form>
+
+    <p id="status" class="status" role="status"></p>
+
+    <section id="entity-card" class="card hidden">
+      <h2 id="entity-label"></h2>
+      <a id="entity-uri" class="uri" target="_blank" rel="noopener noreferrer"></a>
+      <p id="entity-abstract" class="abstract"></p>
+    </section>
+
+    <section id="candidates-section" class="hidden">
+      <h3>Other candidates</h3>
+      <ul id="candidates-list" class="candidates"></ul>
+    </section>
+
+    <section id="graph-section" class="hidden">
+      <div class="section-heading">
+        <h3>Knowledge graph</h3>
+        <div class="graph-legend" aria-label="Graph legend">
+          <span><i class="legend-dot entity-dot"></i>Entity</span>
+          <span><i class="legend-dot literal-dot"></i>Literal</span>
+        </div>
+      </div>
+      <div class="graph-frame">
+        <svg id="knowledge-graph" class="knowledge-graph" role="img" aria-label="Knowledge graph visualization" viewBox="0 0 1000 560"></svg>
+      </div>
+    </section>
+
+    <section id="triples-section" class="hidden">
+      <div class="section-heading">
+        <h3>Triples (<span id="triples-count">0</span>)</h3>
+        <button type="button" id="summarize-button" class="summary-button">Generate ToT4ES summary</button>
+      </div>
+      <table class="triples">
+        <thead>
+          <tr><th>#</th><th>Predicate</th><th>Object</th></tr>
+        </thead>
+        <tbody id="triples-body"></tbody>
+      </table>
+    </section>
+
+    <section id="summary-section" class="card summary-card hidden">
+      <div class="section-heading">
+        <h3>ToT4ES summary</h3>
+        <span id="summary-count" class="summary-count"></span>
+      </div>
+      <ol id="summary-list" class="summary-list"></ol>
+    </section>
+  </main>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
