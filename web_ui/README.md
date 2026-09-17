@@ -26,6 +26,29 @@ uvicorn app:app --reload --port 8000
 
 Open http://127.0.0.1:8000
 
+### Serve on the machine's network address
+
+`--host 127.0.0.1` (the uvicorn default) only accepts local connections. Bind to
+all interfaces to reach the app at `http://131.234.28.226:8000`:
+
+```bash
+cd web_ui
+uvicorn app:app --host 0.0.0.0 --port 8000
+```
+
+- Drop `--reload` for anything other than development.
+- The port must be open in the host firewall, e.g.
+  `sudo ufw allow 8000/tcp`.
+- To use `http://131.234.28.226` without a port, either run on port 80
+  (`--port 80` needs root or `sudo setcap 'cap_net_bind_service=+ep' $(which python3)`)
+  or put nginx/Apache in front and proxy to `127.0.0.1:8000`. Behind a reverse
+  proxy add `--proxy-headers --forwarded-allow-ips='*'`.
+- The frontend calls the API with relative paths, so no client-side URL change
+  is needed and no CORS configuration is required.
+- Exposing the server also exposes `/api/summarize`, which spends your LLM
+  quota. Keep it on a trusted network or place authentication in front of it,
+  and never move `DICE_LLM_API_KEY` into the browser.
+
 ## LLM providers
 
 The UI has an **LLM** dropdown next to *Generate ToT4ES summary* with two
