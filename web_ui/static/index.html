@@ -42,6 +42,7 @@
     <section id="graph-section" class="hidden">
       <div class="section-heading">
         <h3>Knowledge graph</h3>
+        <span id="entity-runtime" class="runtime-label"></span>
         <div class="graph-tools">
           <span class="graph-hint">Drag nodes &middot; scroll to zoom &middot; drag background to pan</span>
           <div class="graph-legend" aria-label="Graph legend">
@@ -51,8 +52,27 @@
           <button type="button" id="graph-reset" class="graph-reset">Reset view</button>
         </div>
       </div>
-      <div class="graph-frame">
-        <svg id="knowledge-graph" class="knowledge-graph" role="img" aria-label="Knowledge graph visualization" viewBox="0 0 1000 560"></svg>
+      <div class="graph-comparison">
+        <div class="graph-panel">
+          <h4 id="entity-graph-title">Entity description</h4>
+          <div class="graph-frame">
+            <svg id="knowledge-graph" class="knowledge-graph" role="img" aria-label="Knowledge graph visualization" viewBox="0 0 1000 560"></svg>
+          </div>
+        </div>
+        <div id="summary-graph-block" class="graph-panel summary-graph-panel hidden">
+          <div class="comparison-arrow" aria-hidden="true">&#8594;</div>
+          <div class="summary-panel-heading">
+            <h4>ToT4ES entity summary</h4>
+            <span id="summary-runtime" class="runtime-label"></span>
+          </div>
+          <div class="graph-tools">
+            <span class="graph-hint">Drag nodes &middot; scroll to zoom &middot; drag background to pan</span>
+            <button type="button" id="summary-graph-reset" class="graph-reset">Reset view</button>
+          </div>
+          <div class="graph-frame">
+            <svg id="summary-graph" class="knowledge-graph" role="img" aria-label="Selected summary graph visualization" viewBox="0 0 1000 560"></svg>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -79,20 +99,28 @@
         <span id="summary-count" class="summary-count"></span>
       </div>
       <ol id="summary-list" class="summary-list"></ol>
-      <div id="summary-graph-block" class="hidden">
-        <div class="section-heading">
-          <h3>Summary graph</h3>
-          <div class="graph-tools">
-            <span class="graph-hint">Drag nodes &middot; scroll to zoom &middot; drag background to pan</span>
-            <button type="button" id="summary-graph-reset" class="graph-reset">Reset view</button>
-          </div>
-        </div>
-        <div class="graph-frame">
-          <svg id="summary-graph" class="knowledge-graph" role="img" aria-label="Selected summary graph visualization" viewBox="0 0 1000 560"></svg>
-        </div>
-      </div>
     </section>
   </main>
+
+  <div id="generation-modal" class="generation-modal hidden" role="dialog" aria-modal="true" aria-labelledby="generation-title">
+    <div class="generation-window">
+      <div class="generation-header">
+        <div>
+          <span class="generation-kicker">ToT4ES search</span>
+          <h2 id="generation-title">Generating entity summary</h2>
+        </div>
+        <span id="generation-runtime" class="runtime-label">0.00 s</span>
+      </div>
+      <p id="generation-status" class="generation-status">Preparing the current state...</p>
+      <div class="search-tree-frame">
+        <svg id="search-tree" class="search-tree" viewBox="0 0 900 460" role="img" aria-label="Animated ToT4ES search tree"></svg>
+      </div>
+      <div class="generation-footer">
+        <span id="generation-step">Step 0 of 5</span>
+        <span class="generation-legend"><i class="tree-dot active-dot"></i>evaluating <i class="tree-dot selected-dot"></i>selected</span>
+      </div>
+    </div>
+  </div>
 
   <script src="/static/app.js"></script>
 </body>

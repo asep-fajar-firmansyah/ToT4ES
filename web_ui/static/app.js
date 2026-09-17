@@ -18,9 +18,12 @@ const candidatesList = document.getElementById("candidates-list");
 const graphSection = document.getElementById("graph-section");
 const graph = document.getElementById("knowledge-graph");
 const graphReset = document.getElementById("graph-reset");
+const entityRuntime = document.getElementById("entity-runtime");
+const entityGraphTitle = document.getElementById("entity-graph-title");
 const summaryGraph = document.getElementById("summary-graph");
 const summaryGraphBlock = document.getElementById("summary-graph-block");
 const summaryGraphReset = document.getElementById("summary-graph-reset");
+const summaryRuntime = document.getElementById("summary-runtime");
 const triplesSection = document.getElementById("triples-section");
 const triplesBody = document.getElementById("triples-body");
 const triplesCount = document.getElementById("triples-count");
@@ -29,9 +32,16 @@ const providerSelect = document.getElementById("provider-select");
 const summarySection = document.getElementById("summary-section");
 const summaryList = document.getElementById("summary-list");
 const summaryCount = document.getElementById("summary-count");
+const generationModal = document.getElementById("generation-modal");
+const searchTree = document.getElementById("search-tree");
+const generationRuntime = document.getElementById("generation-runtime");
+const generationStatus = document.getElementById("generation-status");
+const generationStep = document.getElementById("generation-step");
 
 let currentEntity = null;
 let currentTriples = [];
+let generationTimer = null;
+let generationStartedAt = 0;
 
 loadProviders();
 
@@ -84,6 +94,7 @@ uploadForm.addEventListener("submit", async (event) => {
   if (!file) return;
   setBusy(true, "Loading N-Triples file...");
   uploadButton.disabled = true;
+    const startedAt = performance.now();
   try {
     const body = new FormData();
     body.append("file", file);
@@ -94,6 +105,7 @@ uploadForm.addEventListener("submit", async (event) => {
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.detail || `Request failed (${response.status})`);
     render(payload);
+    entityRuntime.textContent = `Loaded in ${formatRuntime(performance.now() - startedAt)}`;
     setBusy(false, `Loaded ${file.name}.`);
   } catch (error) {
     reset();
@@ -105,6 +117,7 @@ uploadForm.addEventListener("submit", async (event) => {
 
 async function load(params) {
   const limit = limitInput.value || "30";
+  const startedAt = performance.now();
   const query = new URLSearchParams({ ...params, limit });
 
   setBusy(true, "Querying DBpedia\u2026");
@@ -115,6 +128,7 @@ async function load(params) {
       throw new Error(payload.detail || `Request failed (${response.status})`);
     }
     render(payload);
+    entityRuntime.textContent = `Loaded in ${formatRuntime(performance.now() - startedAt)}`;
     setBusy(false, "");
   } catch (error) {
     reset();
@@ -137,6 +151,8 @@ function reset() {
   candidatesList.replaceChildren();
   graph.replaceChildren();
   summaryGraph.replaceChildren();
+  entityRuntime.textContent = "";
+  summaryRuntime.textContent = "";
   graphControllers.clear();
   triplesBody.replaceChildren();
   summaryList.replaceChildren();
@@ -178,6 +194,7 @@ function render(payload) {
   const triples = payload.triples || [];
   currentEntity = resolved;
   currentTriples = triples;
+  entityGraphTitle.textContent = `${resolved.label} entity description`;
   renderGraph(graph, resolved, triples);
   graphSection.classList.remove("hidden");
   triples.forEach((triple) => triplesBody.appendChild(buildRow(triple)));
@@ -191,6 +208,8 @@ summarizeButton.addEventListener("click", async () => {
   const provider = selected?.dataset.provider || null;
   const model = selected?.dataset.model || null;
   summarizeButton.disabled = true;
+  const startedAt = performance.now();
+  openGenerationModal(currentEntity.label);
   statusEl.textContent = `Running ToT4ES selection through ${model || "the LLM API"}\u2026`;
   try {
     const response = await fetch("/api/summarize", {
@@ -207,15 +226,159 @@ summarizeButton.addEventListener("click", async () => {
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.detail || `Request failed (${response.status})`);
     renderSummary(payload.summary || []);
+    summaryRuntime.textContent = `Runtime ${formatRuntime(performance.now() - startedAt)}`;
+    finishGenerationModal(true, payload.summary || []);
     statusEl.textContent = payload.model
       ? `ToT4ES summary generated with ${payload.model}.`
       : "ToT4ES summary generated.";
   } catch (error) {
+    finishGenerationModal(false);
     statusEl.textContent = error.message;
   } finally {
     summarizeButton.disabled = false;
   }
 });
+
+function formatRuntime(milliseconds) {
+  if (milliseconds < 1000) return `${Math.round(milliseconds)} ms`;
+  return `${(milliseconds / 1000).toFixed(2)} s`;
+}
+
+function openGenerationModal(entityLabel) {
+  generationModal.classList.remove("hidden");
+  generationModal.setAttribute("aria-busy", "true");
+  generationStartedAt = performance.now();
+  generationStatus.textContent = `Exploring candidate triples for ${entityLabel}...`;
+  generationStep.textContent = "Step 0 of 5";
+  drawSearchTree(0, []);
+  clearInterval(generationTimer);
+  generationTimer = setInterval(() => {
+    const elapsed = performance.now() - generationStartedAt;
+    const stage = Math.min(5, Math.floor(elapsed / 850));
+    generationRuntime.textContent = formatRuntime(elapsed);
+    generationStep.textContent = `Step ${stage} of 5`;
+    generationStatus.textContent = [
+      "Preparing the current state...",
+      "Generating relatedness candidates...",
+      "Scoring informativeness...",
+      "Checking diversity...",
+      "Evaluating candidate summaries...",
+      "Selecting the best path...",
+    ][stage];
+    drawSearchTree(stage, []);
+  }, 120);
+}
+
+function finishGenerationModal(success, summary) {
+  clearInterval(generationTimer);
+  generationTimer = null;
+  const elapsed = performance.now() - generationStartedAt;
+  generationRuntime.textContent = formatRuntime(elapsed);
+  generationStep.textContent = success ? "Complete" : "Stopped";
+  generationStatus.textContent = success
+    ? "Best summary path selected."
+    : "Summary generation failed.";
+  drawSearchTree(success ? 5 : 0, summary.map((triple) => triple.index));
+  generationModal.setAttribute("aria-busy", "false");
+  window.setTimeout(() => generationModal.classList.add("hidden"), success ? 700 : 250);
+}
+
+function drawSearchTree(stage, selectedIndices) {
+  const nodes = [
+    { id: 0, parent: null, x: 450, y: 35, label: "Current state", level: 0 },
+    { id: 1, parent: 0, x: 180, y: 105, label: "Triple: [8]", level: 1 },
+    { id: 2, parent: 0, x: 450, y: 105, label: "Triple: [18]", level: 1 },
+    { id: 3, parent: 0, x: 720, y: 105, label: "Triple: [15]", level: 1 },
+    { id: 4, parent: 1, x: 105, y: 175, label: "[8, 4]", level: 2 },
+    { id: 5, parent: 1, x: 255, y: 175, label: "[8, 20]", level: 2 },
+    { id: 6, parent: 2, x: 375, y: 175, label: "[18, 15]", level: 2 },
+    { id: 7, parent: 2, x: 525, y: 175, label: "[18, 6]", level: 2 },
+    { id: 8, parent: 3, x: 645, y: 175, label: "[15, 4]", level: 2 },
+    { id: 9, parent: 3, x: 795, y: 175, label: "[15, 20]", level: 2 },
+    { id: 10, parent: 4, x: 65, y: 250, label: "[8, 4, 1]", level: 3 },
+    { id: 11, parent: 5, x: 205, y: 250, label: "[8, 20, 15]", level: 3 },
+    { id: 12, parent: 6, x: 345, y: 250, label: "[18, 15, 1]", level: 3 },
+    { id: 13, parent: 7, x: 485, y: 250, label: "[18, 6, 20]", level: 3 },
+    { id: 14, parent: 8, x: 625, y: 250, label: "[15, 4, 8]", level: 3 },
+    { id: 15, parent: 9, x: 765, y: 250, label: "[15, 20, 4]", level: 3 },
+    { id: 16, parent: 11, x: 205, y: 330, label: "Evaluate", level: 4 },
+    { id: 17, parent: 12, x: 345, y: 330, label: "Evaluate", level: 4 },
+    { id: 18, parent: 15, x: 765, y: 330, label: "Evaluate", level: 4 },
+    { id: 19, parent: 16, x: 205, y: 400, label: "Best", level: 5 },
+    { id: 20, parent: 17, x: 345, y: 400, label: "Discard", level: 5 },
+    { id: 21, parent: 18, x: 765, y: 400, label: "Discard", level: 5 },
+  ];
+  const byId = new Map(nodes.map((node) => [node.id, node]));
+  const selectedPath = new Set([0, 2, 6, 12, 17, 20]);
+  const selectedSet = new Set(selectedIndices || []);
+  searchTree.replaceChildren();
+  const defs = document.createElementNS(SVG_NS, "defs");
+  const marker = document.createElementNS(SVG_NS, "marker");
+  marker.setAttribute("id", "tree-arrow");
+  marker.setAttribute("viewBox", "0 0 10 10");
+  marker.setAttribute("refX", "9");
+  marker.setAttribute("refY", "5");
+  marker.setAttribute("markerWidth", "5");
+  marker.setAttribute("markerHeight", "5");
+  marker.setAttribute("orient", "auto");
+  const arrow = document.createElementNS(SVG_NS, "path");
+  arrow.setAttribute("d", "M 0 0 L 10 5 L 0 10 z");
+  arrow.setAttribute("fill", "#718096");
+  marker.appendChild(arrow);
+  defs.appendChild(marker);
+  searchTree.appendChild(defs);
+
+  const edges = document.createElementNS(SVG_NS, "g");
+  nodes.filter((node) => node.parent !== null).forEach((node) => {
+    const parent = byId.get(node.parent);
+    const edge = document.createElementNS(SVG_NS, "line");
+    edge.setAttribute("x1", parent.x);
+    edge.setAttribute("y1", parent.y);
+    edge.setAttribute("x2", node.x);
+    edge.setAttribute("y2", node.y);
+    edge.setAttribute("class", `tree-edge ${node.level <= stage ? "active" : ""} ${stage === 5 && selectedPath.has(node.id) ? "selected" : ""}`);
+    edge.setAttribute("marker-end", "url(#tree-arrow)");
+    edges.appendChild(edge);
+  });
+  searchTree.appendChild(edges);
+
+  const nodeLayer = document.createElementNS(SVG_NS, "g");
+  nodes.forEach((node) => {
+    const group = document.createElementNS(SVG_NS, "g");
+    const resolved = stage === 5 && selectedSet.size ? selectedPath.has(node.id) : selectedPath.has(node.id);
+    const failed = node.level > 1 && !resolved;
+    group.setAttribute("class", `tree-node ${node.level <= stage ? "active" : "dimmed"} ${stage === 5 && resolved ? "selected" : ""} ${stage === 5 && failed ? "failed" : ""}`);
+    const circle = document.createElementNS(SVG_NS, "circle");
+    circle.setAttribute("cx", node.x);
+    circle.setAttribute("cy", node.y);
+    circle.setAttribute("r", node.level === 0 ? "17" : "12");
+    circle.setAttribute("fill", node.level === 0 ? "#f4f5f7" : ["#d5e5ff", "#ffe0bb", "#c7d8e4", "#dfc8e8", "#ffe6a5"][node.level - 1] || "#d5e5ff");
+    group.appendChild(circle);
+    const text = document.createElementNS(SVG_NS, "text");
+    text.setAttribute("x", node.x);
+    text.setAttribute("y", node.y - 20);
+    text.textContent = node.label;
+    group.appendChild(text);
+    if (stage === 5 && failed) {
+      const mark = document.createElementNS(SVG_NS, "text");
+      mark.setAttribute("x", node.x + 15);
+      mark.setAttribute("y", node.y + 5);
+      mark.setAttribute("class", "tree-cross");
+      mark.textContent = "×";
+      group.appendChild(mark);
+    }
+    if (stage === 5 && resolved) {
+      const mark = document.createElementNS(SVG_NS, "text");
+      mark.setAttribute("x", node.x + 15);
+      mark.setAttribute("y", node.y + 5);
+      mark.setAttribute("class", "tree-check");
+      mark.textContent = "✓";
+      group.appendChild(mark);
+    }
+    nodeLayer.appendChild(group);
+  });
+  searchTree.appendChild(nodeLayer);
+}
 
 function renderSummary(summary) {
   summaryList.replaceChildren();

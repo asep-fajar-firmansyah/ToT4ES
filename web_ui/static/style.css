@@ -81,6 +81,40 @@ h3 { font-size: 1.05rem; margin: 0 0 0.6rem; }
   gap: 1rem;
 }
 
+.runtime-label {
+  color: var(--muted);
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.graph-comparison {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+.graph-panel { min-width: 0; position: relative; }
+.graph-panel h4 { margin: 0 0 0.5rem; font-size: 0.95rem; }
+.summary-graph-panel { padding-left: 1rem; border-left: 1px solid var(--border); }
+.comparison-arrow {
+  position: absolute;
+  left: -1.35rem;
+  top: 45%;
+  z-index: 2;
+  width: 2.2rem;
+  height: 2.2rem;
+  display: grid;
+  place-items: center;
+  border: 1px solid var(--border);
+  border-radius: 50%;
+  background: var(--surface, #fff);
+  color: var(--accent);
+  font-size: 1.4rem;
+}
+
+.summary-panel-heading { display: flex; align-items: center; justify-content: space-between; gap: 0.5rem; }
+
 .graph-legend {
   display: flex;
   gap: 0.8rem;
@@ -197,6 +231,12 @@ h3 { font-size: 1.05rem; margin: 0 0 0.6rem; }
 .summary-list li { padding: 0.45rem 0; border-bottom: 1px solid var(--border); }
 .summary-list li:last-child { border-bottom: none; }
 
+@media (max-width: 900px) {
+  .graph-comparison { grid-template-columns: 1fr; }
+  .summary-graph-panel { padding-left: 0; border-left: none; border-top: 1px solid var(--border); padding-top: 1rem; }
+  .comparison-arrow { left: 50%; top: -1.15rem; transform: rotate(90deg); }
+}
+
 .triples {
   width: 100%;
   border-collapse: collapse;
@@ -224,6 +264,71 @@ h3 { font-size: 1.05rem; margin: 0 0 0.6rem; }
 a { color: var(--accent); }
 
 .hidden { display: none; }
+
+.generation-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: 1rem;
+  background: rgba(20, 28, 40, 0.48);
+}
+
+.generation-window {
+  width: min(920px, 100%);
+  max-height: min(760px, calc(100vh - 2rem));
+  overflow: auto;
+  padding: 1.25rem;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #fff;
+  box-shadow: 0 20px 70px rgba(20, 28, 40, 0.28);
+}
+
+.generation-header, .generation-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.generation-kicker {
+  color: var(--accent);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.generation-header h2 { margin: 0.15rem 0 0; font-size: 1.25rem; }
+.generation-status { min-height: 1.25rem; margin: 0.9rem 0 0.5rem; color: var(--muted); }
+.search-tree-frame { overflow: hidden; border: 1px solid var(--border); background: #fbfcfe; }
+.search-tree { display: block; width: 100%; min-height: 330px; }
+.tree-edge { stroke: #9aa8b8; stroke-width: 1.2; transition: stroke 0.25s; }
+.tree-edge.active { stroke: #e28a22; stroke-width: 2; }
+.tree-edge.selected { stroke: #39a85b; stroke-width: 2.6; }
+.tree-node { transition: opacity 0.25s; }
+.tree-node circle { stroke: #657488; stroke-width: 1.3; }
+.tree-node text { fill: #425166; font-size: 11px; text-anchor: middle; pointer-events: none; }
+.tree-node.dimmed { opacity: 0.28; }
+.tree-node.active circle { stroke: #e28a22; stroke-width: 2.5; }
+.tree-node.selected circle { fill: #bde8bf !important; stroke: #39a85b; stroke-width: 2.5; }
+.tree-node.failed circle { fill: #fff; stroke: #e07855; }
+.tree-check { fill: #39a85b; font-size: 17px; font-weight: 700; }
+.tree-cross { fill: #e07855; font-size: 15px; font-weight: 700; }
+.generation-footer { margin-top: 0.65rem; color: var(--muted); font-size: 0.78rem; }
+.generation-legend { display: flex; align-items: center; gap: 0.35rem; }
+.tree-dot { display: inline-block; width: 0.55rem; height: 0.55rem; border-radius: 50%; }
+.active-dot { background: #e28a22; }
+.selected-dot { background: #39a85b; }
+
+@media (max-width: 600px) {
+  .generation-window { padding: 0.8rem; }
+  .generation-header h2 { font-size: 1.05rem; }
+  .search-tree { min-height: 270px; }
+  .generation-footer { align-items: flex-start; flex-direction: column; gap: 0.35rem; }
+}
 
 .sr-only {
   position: absolute;
