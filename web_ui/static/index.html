@@ -36,9 +36,13 @@
     <section id="graph-section" class="hidden">
       <div class="section-heading">
         <h3>Knowledge graph</h3>
-        <div class="graph-legend" aria-label="Graph legend">
-          <span><i class="legend-dot entity-dot"></i>Entity</span>
-          <span><i class="legend-dot literal-dot"></i>Literal</span>
+        <div class="graph-tools">
+          <span class="graph-hint">Drag nodes &middot; scroll to zoom &middot; drag background to pan</span>
+          <div class="graph-legend" aria-label="Graph legend">
+            <span><i class="legend-dot entity-dot"></i>Entity</span>
+            <span><i class="legend-dot literal-dot"></i>Literal</span>
+          </div>
+          <button type="button" id="graph-reset" class="graph-reset">Reset view</button>
         </div>
       </div>
       <div class="graph-frame">
@@ -69,6 +73,18 @@
         <span id="summary-count" class="summary-count"></span>
       </div>
       <ol id="summary-list" class="summary-list"></ol>
+      <div id="summary-graph-block" class="hidden">
+        <div class="section-heading">
+          <h3>Summary graph</h3>
+          <div class="graph-tools">
+            <span class="graph-hint">Drag nodes &middot; scroll to zoom &middot; drag background to pan</span>
+            <button type="button" id="summary-graph-reset" class="graph-reset">Reset view</button>
+          </div>
+        </div>
+        <div class="graph-frame">
+          <svg id="summary-graph" class="knowledge-graph" role="img" aria-label="Selected summary graph visualization" viewBox="0 0 1000 560"></svg>
+        </div>
+      </div>
     </section>
   </main>
 

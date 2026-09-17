@@ -88,6 +88,25 @@ h3 { font-size: 1.05rem; margin: 0 0 0.6rem; }
   font-size: 0.78rem;
 }
 
+.graph-tools {
+  display: flex;
+  align-items: center;
+  gap: 0.8rem;
+  flex-wrap: wrap;
+}
+
+.graph-hint { color: var(--muted); font-size: 0.75rem; }
+
+.graph-reset {
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--fg);
+  padding: 0.25rem 0.6rem;
+  font-size: 0.78rem;
+}
+
+.graph-reset:hover { border-color: var(--accent); color: var(--accent); }
+
 .graph-legend span { display: inline-flex; align-items: center; gap: 0.3rem; }
 .legend-dot { width: 0.55rem; height: 0.55rem; display: inline-block; border-radius: 50%; }
 .entity-dot { background: #2f6feb; }
@@ -101,10 +120,15 @@ h3 { font-size: 1.05rem; margin: 0 0 0.6rem; }
   margin-bottom: 1.5rem;
 }
 
-.knowledge-graph { display: block; width: 100%; min-height: 360px; }
+.knowledge-graph { display: block; width: 100%; min-height: 360px; touch-action: none; cursor: grab; }
+.knowledge-graph.panning { cursor: grabbing; }
 .graph-edge { stroke: #aab4c2; stroke-width: 1.2; }
+.graph-edge.selected { stroke: #1f9d55; stroke-width: 2.4; }
 .graph-edge-label { fill: #687587; font-size: 10px; text-anchor: middle; pointer-events: none; }
-.graph-node { outline: none; }
+.graph-edge-label.selected { fill: #1a7f45; font-weight: 600; }
+.graph-node { outline: none; cursor: grab; }
+.graph-node.dragging { cursor: grabbing; }
+.graph-node.selected .graph-node-shape { stroke: #1f9d55; stroke-width: 3; }
 .graph-node-shape { stroke-width: 2; }
 .graph-subject .graph-node-shape { fill: #2f6feb; stroke: #1e4fae; }
 .graph-entity .graph-node-shape { fill: #dce9ff; stroke: #6f9eea; }
