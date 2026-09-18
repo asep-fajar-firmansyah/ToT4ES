@@ -38,6 +38,7 @@ const generationRuntime = document.getElementById("generation-runtime");
 const generationStatus = document.getElementById("generation-status");
 const generationStep = document.getElementById("generation-step");
 const generationClose = document.getElementById("generation-close");
+const generationReopen = document.getElementById("generation-reopen");
 
 let currentEntity = null;
 let currentTriples = [];
@@ -48,8 +49,10 @@ let generationTreeLabels = new Map();
 let generationTreeStates = new Map();
 let generationTreeExpandedState = "";
 let generationSelectedIds = new Set();
+let generationInProgress = false;
 
 generationClose.addEventListener("click", closeGenerationModal);
+generationReopen.addEventListener("click", reopenGenerationModal);
 
 loadProviders();
 
@@ -277,6 +280,8 @@ function formatRuntime(milliseconds) {
 }
 
 function openGenerationModal(entityLabel) {
+  generationInProgress = true;
+  generationReopen.classList.add("hidden");
   generationModal.classList.remove("hidden");
   generationModal.setAttribute("aria-busy", "true");
   generationStartedAt = performance.now();
@@ -353,6 +358,8 @@ function handleGenerationEvent(event) {
 function finishGenerationModal(success, summary) {
   clearInterval(generationTimer);
   generationTimer = null;
+  generationInProgress = false;
+  generationReopen.classList.add("hidden");
   const elapsed = performance.now() - generationStartedAt;
   generationRuntime.textContent = formatRuntime(elapsed);
   generationStep.textContent = success ? "Complete" : "Stopped";
@@ -365,10 +372,21 @@ function finishGenerationModal(success, summary) {
 }
 
 function closeGenerationModal() {
-  clearInterval(generationTimer);
-  generationTimer = null;
   generationModal.classList.add("hidden");
   generationModal.setAttribute("aria-busy", "false");
+  if (generationInProgress) {
+    generationReopen.classList.remove("hidden");
+  } else {
+    clearInterval(generationTimer);
+    generationTimer = null;
+  }
+}
+
+function reopenGenerationModal() {
+  if (!generationInProgress) return;
+  generationReopen.classList.add("hidden");
+  generationModal.classList.remove("hidden");
+  generationModal.setAttribute("aria-busy", "true");
 }
 
 function drawSearchTree(stage, selectedIndices, liveValues = [], visibleLevel = 0) {
