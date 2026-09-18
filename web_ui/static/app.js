@@ -45,6 +45,9 @@ let generationTimer = null;
 let generationStartedAt = 0;
 let generationTreeVisibleLevel = 0;
 let generationTreeLabels = new Map();
+let generationTreeStates = new Map();
+let generationTreeExpandedState = "";
+let generationSelectedIds = new Set();
 
 generationClose.addEventListener("click", closeGenerationModal);
 
@@ -281,6 +284,9 @@ function openGenerationModal(entityLabel) {
   generationStep.textContent = "Step 0 of 5";
   generationTreeVisibleLevel = 0;
   generationTreeLabels = new Map();
+  generationTreeStates = new Map([["", { state: "", status: "active" }]]);
+  generationTreeExpandedState = "";
+  generationSelectedIds = new Set();
   drawSearchTree(0, []);
   clearInterval(generationTimer);
 }
@@ -293,6 +299,7 @@ function handleGenerationEvent(event) {
   if (event.type === "start") {
     generationStatus.textContent = "Step 0: current state initialized.";
   } else if (event.type === "expand") {
+    generationTreeExpandedState = event.state || "";
     generationStatus.textContent = `Step ${stage}: expanding state ${event.triple_ids?.join(", ") || "[]"}.`;
   } else if (event.type === "thoughts") {
     const tasks = Object.entries(event.tasks || {})
@@ -309,6 +316,20 @@ function handleGenerationEvent(event) {
     const liveValues = event.type === "thoughts"
       ? Object.values(event.tasks || {}).flat()
       : event.states || event.triple_ids || [];
+    if (event.type === "thoughts") {
+      [...new Set(liveValues.map((value) => String(value)))].forEach((tripleId) => {
+        const state = generationTreeExpandedState
+          ? `${generationTreeExpandedState}\n${tripleId}`
+          : tripleId;
+        generationTreeStates.set(state, { state, status: "pending" });
+      });
+    }
+    if (["children", "evaluated", "pruned"].includes(event.type)) {
+      liveValues.forEach((state) => {
+        const normalized = Array.isArray(state) ? state.join("\n") : String(state);
+        generationTreeStates.set(normalized, { state: normalized, status: event.type === "pruned" ? "selected" : "active" });
+      });
+    }
   const visibleLevel = event.type === "start" || event.type === "step_start" || event.type === "expand"
     ? 0
     : event.type === "thoughts"
@@ -321,6 +342,7 @@ function handleGenerationEvent(event) {
             ? 5
             : 0;
   generationTreeVisibleLevel = Math.max(generationTreeVisibleLevel, visibleLevel);
+  if (event.type === "complete") generationSelectedIds = new Set(event.triple_ids || []);
   liveValues.forEach((value, index) => {
     const text = Array.isArray(value) ? `[${value.join(", ")}]` : String(value).replace(/\n/g, ", ");
     generationTreeLabels.set(`${visibleLevel}:${index}`, text);
@@ -350,40 +372,38 @@ function closeGenerationModal() {
 }
 
 function drawSearchTree(stage, selectedIndices, liveValues = [], visibleLevel = 0) {
-  const nodes = [
-    { id: 0, parent: null, x: 450, y: 35, label: "Current state", level: 0 },
-    { id: 1, parent: 0, x: 180, y: 105, label: "Triple: [8]", level: 1 },
-    { id: 2, parent: 0, x: 450, y: 105, label: "Triple: [18]", level: 1 },
-    { id: 3, parent: 0, x: 720, y: 105, label: "Triple: [15]", level: 1 },
-    { id: 4, parent: 1, x: 105, y: 175, label: "[8, 4]", level: 2 },
-    { id: 5, parent: 1, x: 255, y: 175, label: "[8, 20]", level: 2 },
-    { id: 6, parent: 2, x: 375, y: 175, label: "[18, 15]", level: 2 },
-    { id: 7, parent: 2, x: 525, y: 175, label: "[18, 6]", level: 2 },
-    { id: 8, parent: 3, x: 645, y: 175, label: "[15, 4]", level: 2 },
-    { id: 9, parent: 3, x: 795, y: 175, label: "[15, 20]", level: 2 },
-    { id: 10, parent: 4, x: 65, y: 250, label: "[8, 4, 1]", level: 3 },
-    { id: 11, parent: 5, x: 205, y: 250, label: "[8, 20, 15]", level: 3 },
-    { id: 12, parent: 6, x: 345, y: 250, label: "[18, 15, 1]", level: 3 },
-    { id: 13, parent: 7, x: 485, y: 250, label: "[18, 6, 20]", level: 3 },
-    { id: 14, parent: 8, x: 625, y: 250, label: "[15, 4, 8]", level: 3 },
-    { id: 15, parent: 9, x: 765, y: 250, label: "[15, 20, 4]", level: 3 },
-    { id: 16, parent: 11, x: 205, y: 330, label: "Evaluate", level: 4 },
-    { id: 17, parent: 12, x: 345, y: 330, label: "Evaluate", level: 4 },
-    { id: 18, parent: 15, x: 765, y: 330, label: "Evaluate", level: 4 },
-    { id: 19, parent: 16, x: 205, y: 400, label: "Best", level: 5 },
-    { id: 20, parent: 17, x: 345, y: 400, label: "Discard", level: 5 },
-    { id: 21, parent: 18, x: 765, y: 400, label: "Discard", level: 5 },
-  ];
-  const visibleNodes = nodes.filter((node) => node.level === 0 || node.level <= visibleLevel);
+  const stateNodes = [...generationTreeStates.values()].map((entry, index) => {
+    const ids = entry.state ? entry.state.split("\n").filter(Boolean) : [];
+    const parentState = ids.slice(0, -1).join("\n");
+    return {
+      id: entry.state || "root",
+      parent: parentState || "root",
+      x: 0,
+      y: ids.length * 75 + 35,
+      label: ids.length === 1 ? `Triple: [${ids[0]}]` : ids.length ? `[${ids.join(", ")}]` : "Current state",
+      state: entry.state,
+      status: entry.status,
+      level: ids.length,
+      order: index,
+    };
+  });
+  const nodesByLevel = new Map();
+  stateNodes.forEach((node) => {
+    if (!nodesByLevel.has(node.level)) nodesByLevel.set(node.level, []);
+    nodesByLevel.get(node.level).push(node);
+  });
+  nodesByLevel.forEach((levelNodes) => {
+    levelNodes.forEach((node, index) => {
+      node.x = 450 + (index - (levelNodes.length - 1) / 2) * Math.min(150, 780 / Math.max(1, levelNodes.length));
+    });
+  });
+  const visibleNodes = stateNodes.filter((node) => node.level <= visibleLevel);
   const byId = new Map(visibleNodes.map((node) => [node.id, node]));
-  const selectedPath = new Set([0, 2, 6, 12, 17, 20]);
-  const selectedSet = new Set(selectedIndices || []);
-  const levelIndexes = new Map();
-  visibleNodes.filter((node) => node.level > 0).forEach((node) => {
-    const index = levelIndexes.get(node.level) || 0;
-    levelIndexes.set(node.level, index + 1);
-    const liveLabel = generationTreeLabels.get(`${node.level}:${index}`);
-    if (liveLabel) node.label = liveLabel;
+  const selectedSet = new Set(selectedIndices || generationSelectedIds);
+  const selectedState = new Set();
+  visibleNodes.forEach((node) => {
+    const ids = node.state.split("\n").filter(Boolean).map(Number);
+    if (ids.length && ids.every((id) => selectedSet.has(id))) selectedState.add(node.id);
   });
   searchTree.replaceChildren();
   const defs = document.createElementNS(SVG_NS, "defs");
@@ -403,14 +423,14 @@ function drawSearchTree(stage, selectedIndices, liveValues = [], visibleLevel = 
   searchTree.appendChild(defs);
 
   const edges = document.createElementNS(SVG_NS, "g");
-  visibleNodes.filter((node) => node.parent !== null && byId.has(node.parent)).forEach((node) => {
+  visibleNodes.filter((node) => node.level > 0 && byId.has(node.parent)).forEach((node) => {
     const parent = byId.get(node.parent);
     const edge = document.createElementNS(SVG_NS, "line");
     edge.setAttribute("x1", parent.x);
     edge.setAttribute("y1", parent.y);
     edge.setAttribute("x2", node.x);
     edge.setAttribute("y2", node.y);
-    edge.setAttribute("class", `tree-edge ${node.level <= stage ? "active" : ""} ${stage === 5 && selectedPath.has(node.id) ? "selected" : ""}`);
+    edge.setAttribute("class", `tree-edge ${node.status === "pending" ? "active" : ""} ${selectedState.has(node.id) ? "selected" : ""}`);
     edge.setAttribute("marker-end", "url(#tree-arrow)");
     edges.appendChild(edge);
   });
@@ -419,9 +439,9 @@ function drawSearchTree(stage, selectedIndices, liveValues = [], visibleLevel = 
   const nodeLayer = document.createElementNS(SVG_NS, "g");
   visibleNodes.forEach((node) => {
     const group = document.createElementNS(SVG_NS, "g");
-    const resolved = stage === 5 && selectedSet.size ? selectedPath.has(node.id) : selectedPath.has(node.id);
-    const failed = node.level > 1 && !resolved;
-    group.setAttribute("class", `tree-node ${node.level <= stage ? "active" : "dimmed"} ${stage === 5 && resolved ? "selected" : ""} ${stage === 5 && failed ? "failed" : ""}`);
+    const resolved = selectedState.has(node.id);
+    const failed = stage === 5 && node.level > 0 && !resolved;
+    group.setAttribute("class", `tree-node ${node.status === "pending" ? "active" : ""} ${resolved ? "selected" : ""} ${failed ? "failed" : ""}`);
     const circle = document.createElementNS(SVG_NS, "circle");
     circle.setAttribute("cx", node.x);
     circle.setAttribute("cy", node.y);
@@ -433,7 +453,7 @@ function drawSearchTree(stage, selectedIndices, liveValues = [], visibleLevel = 
     text.setAttribute("y", node.y - 20);
     text.textContent = node.label;
     group.appendChild(text);
-    if (stage === 5 && failed) {
+    if (failed) {
       const mark = document.createElementNS(SVG_NS, "text");
       mark.setAttribute("x", node.x + 15);
       mark.setAttribute("y", node.y + 5);
@@ -441,7 +461,7 @@ function drawSearchTree(stage, selectedIndices, liveValues = [], visibleLevel = 
       mark.textContent = "×";
       group.appendChild(mark);
     }
-    if (stage === 5 && resolved) {
+    if (resolved) {
       const mark = document.createElementNS(SVG_NS, "text");
       mark.setAttribute("x", node.x + 15);
       mark.setAttribute("y", node.y + 5);
