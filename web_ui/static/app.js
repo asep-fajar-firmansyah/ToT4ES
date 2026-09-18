@@ -39,6 +39,7 @@ const generationStatus = document.getElementById("generation-status");
 const generationStep = document.getElementById("generation-step");
 const generationClose = document.getElementById("generation-close");
 const generationReopen = document.getElementById("generation-reopen");
+const generationReopenLabel = document.getElementById("generation-reopen-label");
 
 let currentEntity = null;
 let currentTriples = [];
@@ -50,6 +51,7 @@ let generationTreeStates = new Map();
 let generationTreeExpandedState = "";
 let generationSelectedIds = new Set();
 let generationInProgress = false;
+let generationHasResult = false;
 
 generationClose.addEventListener("click", closeGenerationModal);
 generationReopen.addEventListener("click", reopenGenerationModal);
@@ -281,7 +283,9 @@ function formatRuntime(milliseconds) {
 
 function openGenerationModal(entityLabel) {
   generationInProgress = true;
+  generationHasResult = false;
   generationReopen.classList.add("hidden");
+  generationReopen.classList.remove("completed");
   generationModal.classList.remove("hidden");
   generationModal.setAttribute("aria-busy", "true");
   generationStartedAt = performance.now();
@@ -359,7 +363,7 @@ function finishGenerationModal(success, summary) {
   clearInterval(generationTimer);
   generationTimer = null;
   generationInProgress = false;
-  generationReopen.classList.add("hidden");
+  generationHasResult = true;
   const elapsed = performance.now() - generationStartedAt;
   generationRuntime.textContent = formatRuntime(elapsed);
   generationStep.textContent = success ? "Complete" : "Stopped";
@@ -368,13 +372,24 @@ function finishGenerationModal(success, summary) {
     : "Summary generation failed.";
   drawSearchTree(success ? 5 : 0, summary.map((triple) => triple.index), [], success ? 5 : 0);
   generationModal.setAttribute("aria-busy", "false");
-  window.setTimeout(() => generationModal.classList.add("hidden"), success ? 700 : 250);
+  // Keep the modal open briefly so the final tree is visible, then leave the
+  // reopen pill available so the result can still be inspected afterward.
+  window.setTimeout(() => {
+    generationModal.classList.add("hidden");
+    generationReopenLabel.textContent = success ? "View ToT4ES search tree" : "View last search attempt";
+    generationReopen.classList.toggle("completed", success);
+    generationReopen.classList.remove("hidden");
+  }, success ? 900 : 400);
 }
 
 function closeGenerationModal() {
   generationModal.classList.add("hidden");
   generationModal.setAttribute("aria-busy", "false");
   if (generationInProgress) {
+    generationReopenLabel.textContent = "Resume ToT4ES progress view";
+    generationReopen.classList.remove("completed");
+    generationReopen.classList.remove("hidden");
+  } else if (generationHasResult) {
     generationReopen.classList.remove("hidden");
   } else {
     clearInterval(generationTimer);
@@ -383,10 +398,10 @@ function closeGenerationModal() {
 }
 
 function reopenGenerationModal() {
-  if (!generationInProgress) return;
+  if (!generationInProgress && !generationHasResult) return;
   generationReopen.classList.add("hidden");
   generationModal.classList.remove("hidden");
-  generationModal.setAttribute("aria-busy", "true");
+  generationModal.setAttribute("aria-busy", generationInProgress ? "true" : "false");
 }
 
 function drawSearchTree(stage, selectedIndices, liveValues = [], visibleLevel = 0) {

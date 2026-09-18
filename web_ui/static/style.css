@@ -337,6 +337,11 @@ a { color: var(--accent); }
   animation: generation-reopen-pulse 1.2s ease-in-out infinite;
 }
 
+.generation-reopen.completed .generation-reopen-dot {
+  background: #39a85b;
+  animation: none;
+}
+
 @keyframes generation-reopen-pulse {
   0%, 100% { opacity: 1; }
   50% { opacity: 0.35; }
