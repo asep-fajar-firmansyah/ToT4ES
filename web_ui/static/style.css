@@ -327,6 +327,7 @@ a { color: var(--accent); }
 }
 
 .generation-reopen:hover { border-color: var(--accent); color: var(--accent); }
+.generation-reopen.hidden { display: none; }
 
 .generation-reopen-dot {
   width: 0.6rem;
