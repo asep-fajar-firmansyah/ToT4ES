@@ -477,6 +477,7 @@ class TaskDecomposedToT:
         """
         queue = deque()
         queue.append(self.root)
+        seen_state_keys = {self.canonical_state_key(self.root.state)}
         if event_callback:
             event_callback({"type": "start", "step": 0, "total_steps": self.n_steps, "state": ""})
 
@@ -496,10 +497,6 @@ class TaskDecomposedToT:
 
             # Expand all nodes in current layer
             new_nodes = deque()
-            # Tracks canonical (order-invariant) triple combinations already
-            # produced by another parent this step, so equivalent branches
-            # from different parents collapse into a single node.
-            layer_seen_states: Dict[Tuple[int, ...], TreeNode] = {}
             thought_gen_start = time.time()
             for i in range(current_layer_size):
                 node = queue.popleft()
@@ -567,10 +564,9 @@ class TaskDecomposedToT:
                         continue
 
                     canonical_key = self.canonical_state_key(new_state)
-                    if canonical_key in layer_seen_states:
-                        # Cross-branch duplicate: another parent already produced
-                        # this exact combination of triples this step, so skip
-                        # creating a redundant node/evaluation for it.
+                    if canonical_key in seen_state_keys:
+                        # Equivalent paths are one candidate because state identity
+                        # is order-insensitive.
                         duplicates_skipped += 1
                         if verbose:
                             print(f"DEDUP: skipping duplicate combination {canonical_key} (already produced this step)")
@@ -584,7 +580,7 @@ class TaskDecomposedToT:
                     )
                     node.children.append(child)
                     new_nodes.append(child)
-                    layer_seen_states[canonical_key] = child
+                    seen_state_keys.add(canonical_key)
                     children_created += 1
 
                 if verbose:

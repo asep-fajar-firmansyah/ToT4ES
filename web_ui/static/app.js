@@ -351,6 +351,11 @@ function handleGenerationEvent(event) {
             ? 5
             : 0;
   generationTreeVisibleLevel = Math.max(generationTreeVisibleLevel, visibleLevel);
+  const deepestStateLevel = [...generationTreeStates.keys()].reduce((deepest, state) => {
+    const level = state ? state.split("\n").filter(Boolean).length : 0;
+    return Math.max(deepest, level);
+  }, 0);
+  generationTreeVisibleLevel = Math.max(generationTreeVisibleLevel, deepestStateLevel);
   if (event.type === "complete") generationSelectedIds = new Set(event.triple_ids || []);
   liveValues.forEach((value, index) => {
     const text = Array.isArray(value) ? `[${value.join(", ")}]` : String(value).replace(/\n/g, ", ");
