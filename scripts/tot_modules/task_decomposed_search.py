@@ -7,7 +7,7 @@ Implements the architecture with separate task-specific thought generators
 """
 
 from collections import deque
-from typing import Any, Callable, List, Dict, Optional
+from typing import Any, Callable, List, Dict, Optional, Tuple
 import time
 
 from .tree_node import TreeNode
@@ -123,6 +123,21 @@ class TaskDecomposedToT:
             return True
         except (ValueError, TypeError):
             return False
+
+    @staticmethod
+    def canonical_state_key(state: str) -> Tuple[int, ...]:
+        """Order-invariant identity for a state: the sorted set of triple IDs.
+
+        Two states selecting the same triples are the same summary candidate
+        regardless of the order they were added in, so this key is used to
+        deduplicate branches across different parents and to reuse cached
+        evaluations for combinations seen before.
+        """
+        if not state.strip():
+            return tuple()
+        return tuple(sorted(
+            int(x) for x in state.strip().splitlines() if x.strip().isdigit()
+        ))
 
     def chat_completions(
         self,
@@ -310,14 +325,17 @@ class TaskDecomposedToT:
         """
         n_states = len(states)
         
-        # Check cache for already-evaluated states
+        # Check cache for already-evaluated states. Keyed by the order-invariant
+        # canonical form so combinations reached via a different parent/order
+        # reuse the score instead of re-querying the LLM.
         scores = []
         uncached_indices = []
         uncached_states = []
         
         for i, state in enumerate(states):
-            if state in self.eval_cache:
-                scores.append(self.eval_cache[state])
+            cache_key = self.canonical_state_key(state)
+            if cache_key in self.eval_cache:
+                scores.append(self.eval_cache[cache_key])
             else:
                 scores.append(None)  # Placeholder
                 uncached_indices.append(i)
@@ -337,7 +355,7 @@ class TaskDecomposedToT:
                 
                 # Cache results immediately
                 for state, score in zip(chunk_states, chunk_result):
-                    self.eval_cache[state] = score
+                    self.eval_cache[self.canonical_state_key(state)] = score
             
             # Fill in the uncached scores in the original order
             for idx, score in zip(uncached_indices, chunk_scores):
@@ -478,6 +496,10 @@ class TaskDecomposedToT:
 
             # Expand all nodes in current layer
             new_nodes = deque()
+            # Tracks canonical (order-invariant) triple combinations already
+            # produced by another parent this step, so equivalent branches
+            # from different parents collapse into a single node.
+            layer_seen_states: Dict[Tuple[int, ...], TreeNode] = {}
             thought_gen_start = time.time()
             for i in range(current_layer_size):
                 node = queue.popleft()
@@ -527,6 +549,7 @@ class TaskDecomposedToT:
 
                 # Create children
                 children_created = 0
+                duplicates_skipped = 0
                 for t_str in all_thoughts:
                     try:
                         t_id = int(t_str)
@@ -543,6 +566,16 @@ class TaskDecomposedToT:
                             print(f"WARNING: Invalid state, skipping: {new_state}")
                         continue
 
+                    canonical_key = self.canonical_state_key(new_state)
+                    if canonical_key in layer_seen_states:
+                        # Cross-branch duplicate: another parent already produced
+                        # this exact combination of triples this step, so skip
+                        # creating a redundant node/evaluation for it.
+                        duplicates_skipped += 1
+                        if verbose:
+                            print(f"DEDUP: skipping duplicate combination {canonical_key} (already produced this step)")
+                        continue
+
                     child = TreeNode(
                         state=new_state,
                         thought=t_str,
@@ -551,10 +584,13 @@ class TaskDecomposedToT:
                     )
                     node.children.append(child)
                     new_nodes.append(child)
+                    layer_seen_states[canonical_key] = child
                     children_created += 1
 
                 if verbose:
                     print(f"Children created: {children_created}")
+                    if duplicates_skipped:
+                        print(f"Duplicates skipped: {duplicates_skipped}")
                     if children_created == 0:
                         print("WARNING: No valid children - branch exhausted")
                 if event_callback:
