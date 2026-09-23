@@ -53,6 +53,21 @@ let generationSelectedIds = new Set();
 let generationInProgress = false;
 let generationHasResult = false;
 
+function canonicalGenerationState(state) {
+  const ids = String(state || "").split("\n").filter(Boolean).map(Number);
+  return ids.length ? ids.sort((left, right) => left - right).join("\n") : "";
+}
+
+function retainGenerationState(state, status) {
+  const normalized = String(state || "");
+  const key = canonicalGenerationState(normalized);
+  const existing = generationTreeStates.get(key);
+  if (!existing || (status === "selected" && existing.status !== "selected") ||
+      (status === "active" && existing.status === "pending")) {
+    generationTreeStates.set(key, { state: existing?.state || normalized, status });
+  }
+}
+
 generationClose.addEventListener("click", closeGenerationModal);
 generationReopen.addEventListener("click", reopenGenerationModal);
 
@@ -236,7 +251,6 @@ summarizeButton.addEventListener("click", async () => {
         model,
       }),
     });
-    if (!response.ok) throw new Error(`Request failed (${response.status})`);
     const reader = response.body.getReader();
     const decoder = new TextDecoder();
     let buffer = "";
@@ -330,13 +344,13 @@ function handleGenerationEvent(event) {
         const state = generationTreeExpandedState
           ? `${generationTreeExpandedState}\n${tripleId}`
           : tripleId;
-        generationTreeStates.set(state, { state, status: "pending" });
+        retainGenerationState(state, "pending");
       });
     }
     if (["children", "evaluated", "pruned"].includes(event.type)) {
       liveValues.forEach((state) => {
         const normalized = Array.isArray(state) ? state.join("\n") : String(state);
-        generationTreeStates.set(normalized, { state: normalized, status: event.type === "pruned" ? "selected" : "active" });
+        retainGenerationState(normalized, event.type === "pruned" ? "selected" : "active");
       });
     }
   const visibleLevel = event.type === "start" || event.type === "step_start" || event.type === "expand"
@@ -438,10 +452,15 @@ function drawSearchTree(stage, selectedIndices, liveValues = [], visibleLevel = 
   const visibleNodes = stateNodes.filter((node) => node.level <= visibleLevel);
   const byId = new Map(visibleNodes.map((node) => [node.id, node]));
   const selectedSet = new Set(selectedIndices || generationSelectedIds);
+  const selectedPathPrefixes = new Set();
+  const selectedPath = selectedIndices || [...generationSelectedIds];
+  for (let index = 1; index <= selectedPath.length; index += 1) {
+    selectedPathPrefixes.add(canonicalGenerationState(selectedPath.slice(0, index).join("\n")));
+  }
   const selectedState = new Set();
   visibleNodes.forEach((node) => {
-    const ids = node.state.split("\n").filter(Boolean).map(Number);
-    if (ids.length && ids.every((id) => selectedSet.has(id))) selectedState.add(node.id);
+    const nodeKey = canonicalGenerationState(node.state);
+    if (nodeKey && selectedPathPrefixes.has(nodeKey)) selectedState.add(node.id);
   });
   searchTree.replaceChildren();
   const defs = document.createElementNS(SVG_NS, "defs");
