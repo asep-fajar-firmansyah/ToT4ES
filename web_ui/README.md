@@ -42,28 +42,38 @@ The uploaded subject, description, triples, graph and ToT4ES summary use the
 same UI flow as a DBpedia result. Install `web_ui/requirements.txt` first;
 the upload endpoint requires `python-multipart` for FastAPI form parsing.
 
-### Serve on the machine's network address
+### Public landing page and LAN-only ToT4ES
 
-`--host 127.0.0.1` (the uvicorn default) only accepts local connections. Bind to
-all interfaces to reach the app at `http://131.234.28.226:8000`:
+The human-evaluation landing page can stay publicly served at
+`http://131.234.28.226/`. Run ToT4ES separately on port `8011` and restrict
+that port to your LAN. Use the server's LAN interface address for
+`<LAN_IP>` and your network's CIDR (for example, `192.168.1.0/24`) for
+`<LAN_CIDR>`:
 
 ```bash
 cd web_ui
-uvicorn app:app --host 0.0.0.0 --port 8000
+uvicorn app:app --host <LAN_IP> --port 8011
 ```
 
-- Drop `--reload` for anything other than development.
-- The port must be open in the host firewall, e.g.
-  `sudo ufw allow 8000/tcp`.
-- To use `http://131.234.28.226` without a port, either run on port 80
-  (`--port 80` needs root or `sudo setcap 'cap_net_bind_service=+ep' $(which python3)`)
-  or put nginx/Apache in front and proxy to `127.0.0.1:8000`. Behind a reverse
-  proxy add `--proxy-headers --forwarded-allow-ips='*'`.
-- The frontend calls the API with relative paths, so no client-side URL change
-  is needed and no CORS configuration is required.
-- Exposing the server also exposes `/api/summarize`, which spends your LLM
-  quota. Keep it on a trusted network or place authentication in front of it,
-  and never move `DICE_LLM_API_KEY` into the browser.
+Allow LAN clients and deny other sources to port 8011 with UFW:
+
+```bash
+sudo ufw allow from <LAN_CIDR> to any port 8011 proto tcp
+sudo ufw deny 8011/tcp
+```
+
+LAN users open `http://<LAN_IP>:8011/`. Keep the existing public landing-page
+service on port 80; these firewall rules only target port 8011. Binding to a
+LAN interface address and filtering the port at the firewall are both
+important: binding to `0.0.0.0` alone does not make a service LAN-only. If the
+server has no separate LAN address, bind to `0.0.0.0` only with an equivalent
+firewall or network ACL that permits port 8011 from the LAN and blocks it from
+the public Internet. Do not add a blanket `ufw allow 8011/tcp` rule.
+
+Drop `--reload` outside development. The frontend uses relative API paths, so
+no CORS configuration is needed. Keeping the API LAN-only also protects the
+LLM quota used by `/api/summarize`; never put `DICE_LLM_API_KEY` in the
+browser.
 
 ## LLM providers
 
