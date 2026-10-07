@@ -75,7 +75,7 @@ loadProviders();
 
 async function loadProviders() {
   try {
-    const response = await fetch("/api/providers");
+    const response = await fetch("api/providers");
     const payload = await response.json();
     if (!response.ok) throw new Error(payload.detail || `Request failed (${response.status})`);
     providerSelect.replaceChildren();
@@ -126,7 +126,7 @@ uploadForm.addEventListener("submit", async (event) => {
   try {
     const body = new FormData();
     body.append("file", file);
-    const response = await fetch(`/api/entity/upload?limit=${encodeURIComponent(limitInput.value || "30")}`, {
+    const response = await fetch(`api/entity/upload?limit=${encodeURIComponent(limitInput.value || "30")}`, {
       method: "POST",
       body,
     });
@@ -150,7 +150,7 @@ async function load(params) {
 
   setBusy(true, "Querying DBpedia\u2026");
   try {
-    const response = await fetch(`/api/entity?${query.toString()}`);
+    const response = await fetch(`api/entity?${query.toString()}`);
     const payload = await response.json();
     if (!response.ok) {
       throw new Error(payload.detail || `Request failed (${response.status})`);
@@ -240,7 +240,7 @@ summarizeButton.addEventListener("click", async () => {
   openGenerationModal(currentEntity.label);
   statusEl.textContent = `Running ToT4ES selection through ${model || "the LLM API"}\u2026`;
   try {
-    const response = await fetch("/api/summarize/stream", {
+    const response = await fetch("api/summarize/stream", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
